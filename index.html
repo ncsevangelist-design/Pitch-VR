@@ -1,0 +1,1153 @@
+<title>投球体感VR</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700;900&display=swap">
+<style>
+  :root{
+    --navy-950:#0a1420;
+    --navy-800:#122236;
+    --navy-700:#1b3350;
+    --dirt:#b5793f;
+    --dirt-dim:#8a5d31;
+    --chalk:#f2ede1;
+    --chalk-dim:#a9b3c2;
+    --amber:#f4a93b;
+    --amber-dim:#c9862a;
+    --red:#c0392b;
+    --grass:#3c6b3f;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--navy-950);color:var(--chalk);
+    font-family:"Noto Sans JP","Oswald",sans-serif;overflow:hidden;}
+  #app{position:fixed;inset:0;}
+  #app canvas{display:block;width:100%;height:100%;touch-action:none;}
+
+  .num{font-family:"Oswald",sans-serif;font-variant-numeric:tabular-nums;}
+
+  /* ---------------- landing / config overlay ---------------- */
+  #overlay{
+    position:fixed;inset:0;z-index:10;
+    display:flex;align-items:center;justify-content:center;
+    padding:24px 16px;
+    background:
+      radial-gradient(ellipse 120% 90% at 50% -10%, rgba(244,169,59,0.10), transparent 60%),
+      linear-gradient(180deg, var(--navy-950) 0%, #0d1b2c 55%, #0a1420 100%);
+    overflow-y:auto;
+  }
+  #panel{
+    width:100%;max-width:560px;
+    background:linear-gradient(180deg, var(--navy-800), var(--navy-950));
+    border:1px solid rgba(244,169,59,0.25);
+    border-radius:14px;
+    box-shadow:0 30px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04);
+    padding:26px 26px 22px;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;}
+  .brand .mark{
+    font-family:"Oswald",sans-serif;font-weight:700;font-size:13px;letter-spacing:.14em;
+    color:var(--navy-950);background:var(--amber);padding:3px 8px;border-radius:4px;
+  }
+  .brand .sub{font-size:12px;letter-spacing:.08em;color:var(--chalk-dim);}
+  h1{
+    font-family:"Oswald",sans-serif;font-weight:700;font-size:clamp(28px,6vw,38px);
+    letter-spacing:.01em;margin:6px 0 4px;text-wrap:balance;
+    background:linear-gradient(180deg,#fff,#cfd8e3 60%,var(--amber));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .lede{color:var(--chalk-dim);font-size:14.5px;line-height:1.7;margin:0 0 22px;max-width:60ch;}
+  .lede b{color:var(--chalk);font-weight:500;}
+
+  .group{margin-bottom:18px;}
+  .group-label{
+    font-size:11px;letter-spacing:.12em;color:var(--amber);font-weight:700;
+    text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px;
+  }
+  .group-label::after{content:"";flex:1;height:1px;background:rgba(244,169,59,0.2);}
+
+  .seg{display:flex;gap:8px;flex-wrap:wrap;}
+  .seg button{
+    flex:1 1 auto;min-width:84px;
+    background:var(--navy-700);border:1px solid rgba(255,255,255,0.08);color:var(--chalk-dim);
+    padding:10px 12px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s, transform .1s;
+    font-family:"Noto Sans JP",sans-serif;
+  }
+  .seg button:hover{border-color:rgba(244,169,59,0.4);}
+  .seg button:active{transform:translateY(1px);}
+  .seg button.on{
+    background:linear-gradient(180deg,var(--amber),var(--amber-dim));
+    color:var(--navy-950);border-color:transparent;font-weight:700;
+  }
+
+  .chips{display:flex;gap:8px;flex-wrap:wrap;}
+  .chip{
+    background:var(--navy-700);border:1px solid rgba(255,255,255,0.08);color:var(--chalk-dim);
+    padding:8px 13px;border-radius:999px;font-size:13.5px;cursor:pointer;user-select:none;
+    transition:background .15s,color .15s,border-color .15s;
+  }
+  .chip .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.35;margin-right:7px;vertical-align:middle;}
+  .chip.on{background:rgba(244,169,59,0.14);border-color:var(--amber);color:var(--chalk);}
+  .chip.on .dot{background:var(--amber);opacity:1;}
+
+  #dominantRow{display:none;}
+  #dominantRow.show{display:block;}
+
+  .cta-row{margin-top:22px;display:flex;flex-direction:column;gap:10px;}
+  #enterVr,#enterFlat{
+    width:100%;padding:15px 18px;border-radius:10px;border:none;cursor:pointer;
+    font-family:"Oswald",sans-serif;font-weight:600;font-size:16.5px;letter-spacing:.02em;
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    transition:transform .12s, box-shadow .12s;
+  }
+  #enterVr{background:linear-gradient(180deg,var(--amber),var(--amber-dim));color:var(--navy-950);
+    box-shadow:0 10px 26px rgba(244,169,59,0.28);}
+  #enterVr:hover{transform:translateY(-1px);}
+  #enterVr:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none;}
+  #enterFlat{background:transparent;color:var(--chalk-dim);border:1px solid rgba(255,255,255,0.12);font-size:14px;padding:11px;}
+  #enterFlat:hover{color:var(--chalk);border-color:rgba(255,255,255,0.25);}
+  #vrNote{font-size:12px;color:var(--chalk-dim);text-align:center;margin-top:2px;min-height:14px;}
+
+  /* ---------------- flat-mode HUD (desktop / phone preview) ---------------- */
+  #flatHud{position:fixed;inset:0;z-index:5;pointer-events:none;display:none;font-family:"Noto Sans JP",sans-serif;}
+  #flatHud.show{display:block;}
+  #flatTop{
+    position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;
+    padding:14px 16px;pointer-events:none;
+  }
+  #flatSettings{
+    background:rgba(10,20,32,0.78);border:1px solid rgba(244,169,59,0.25);border-radius:10px;
+    padding:10px 12px;font-size:12.5px;color:var(--chalk-dim);line-height:1.9;pointer-events:auto;
+    backdrop-filter:blur(6px);
+  }
+  #flatSettings b{color:var(--amber);font-family:"Oswald",sans-serif;}
+  #exitFlat{
+    pointer-events:auto;background:rgba(10,20,32,0.78);border:1px solid rgba(255,255,255,0.15);
+    color:var(--chalk-dim);border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer;
+  }
+  #board{
+    position:absolute;top:14px;left:50%;transform:translateX(-50%);
+    background:#050a10;border:2px solid var(--amber-dim);border-radius:8px;
+    padding:8px 22px;text-align:center;min-width:220px;pointer-events:none;
+  }
+  #board .btype{font-size:15px;color:var(--chalk);font-weight:700;letter-spacing:.02em;}
+  #board .bspeed{font-family:"Oswald",sans-serif;font-size:30px;font-weight:700;color:var(--amber);line-height:1.1;}
+  #board .bspeed span{font-size:13px;color:var(--chalk-dim);font-weight:400;margin-left:4px;}
+  #board .bresult{font-size:14px;font-weight:700;color:var(--red);min-height:18px;margin-top:2px;}
+  #board .bresult.good{color:#5fd07a;}
+
+  #flatBottom{
+    position:absolute;bottom:22px;left:0;right:0;display:flex;justify-content:center;gap:12px;pointer-events:auto;
+  }
+  #throwBtn,#swingBtn{
+    font-family:"Oswald",sans-serif;font-weight:600;font-size:16px;letter-spacing:.02em;
+    padding:14px 30px;border-radius:999px;border:none;cursor:pointer;
+  }
+  #throwBtn{background:linear-gradient(180deg,var(--amber),var(--amber-dim));color:var(--navy-950);}
+  #swingBtn{background:var(--red);color:#fff;display:none;}
+  #swingBtn.show{display:inline-block;}
+  #dragHint{position:absolute;bottom:78px;left:0;right:0;text-align:center;font-size:11.5px;color:var(--chalk-dim);opacity:.7;}
+
+  @media (max-width:480px){
+    #panel{padding:20px 18px 18px;}
+    .seg button{min-width:70px;padding:9px 8px;font-size:13px;}
+  }
+</style>
+
+<div id="app"></div>
+
+<div id="overlay">
+  <div id="panel">
+    <div class="brand"><span class="mark">NPB SIM</span><span class="sub">PITCH EXPERIENCE</span></div>
+    <h1>投球体感VR</h1>
+    <p class="lede">Oculus Quest でホームベースに立ち、<b>速球・チェンジアップ・カーブ・シュート・フォーク・スライダー</b>を実際の球速とキレで体感します。右投げ・左投げの投手を選んで、打席に入ってください。</p>
+
+    <div class="group">
+      <div class="group-label">投手</div>
+      <div class="seg" id="segPitcher">
+        <button data-v="R" class="on">右投げ</button>
+        <button data-v="L">左投げ</button>
+        <button data-v="RANDOM">ランダム</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">打席</div>
+      <div class="seg" id="segBatter">
+        <button data-v="R" class="on">右打者</button>
+        <button data-v="L">左打者</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">モード</div>
+      <div class="seg" id="segMode">
+        <button data-v="watch" class="on">見るだけ体感</button>
+        <button data-v="bat">バッティング</button>
+      </div>
+    </div>
+
+    <div class="group" id="dominantRow">
+      <div class="group-label">バットを持つ手</div>
+      <div class="seg" id="segDominant">
+        <button data-v="R" class="on">右手</button>
+        <button data-v="L">左手</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">投げる球種(タップで選択/解除)</div>
+      <div class="chips" id="chipPitches"></div>
+    </div>
+
+    <div class="cta-row">
+      <button id="enterVr" disabled><span>⚾</span>VRで打席に入る</button>
+      <button id="enterFlat">画面のみで体験する(デスクトップ/確認用)</button>
+      <div id="vrNote">対応状況を確認しています…</div>
+    </div>
+  </div>
+</div>
+
+<div id="flatHud">
+  <div id="board">
+    <div class="btype" id="bType">投球を待っています</div>
+    <div class="bspeed" id="bSpeed">--<span>km/h</span></div>
+    <div class="bresult" id="bResult"></div>
+  </div>
+  <div id="flatTop">
+    <div id="flatSettings"></div>
+    <button id="exitFlat">設定に戻る ✕</button>
+  </div>
+  <div id="dragHint">ドラッグで視点を動かせます(下を見るとホームベースが見えます)</div>
+  <div id="flatBottom">
+    <button id="throwBtn">投げる ▶</button>
+    <button id="swingBtn">スイング！</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   設定値・球種データ
+   ============================================================ */
+const PITCH_TYPES = {
+  fastball:{ key:"fastball", name:"速球(ストレート)", short:"直球", speed:[144,153], g:7.0,  ah:0.55, side:"arm"  },
+  change:  { key:"change",   name:"チェンジアップ",   short:"チェンジ", speed:[118,129], g:11.0, ah:0.9,  side:"arm"  },
+  curve:   { key:"curve",    name:"カーブ",           short:"カーブ", speed:[107,124], g:15.5, ah:2.7,  side:"glove"},
+  shuuto:  { key:"shuuto",   name:"シュート",         short:"シュート", speed:[132,143], g:8.2,  ah:3.6,  side:"arm"  },
+  fork:    { key:"fork",     name:"フォーク",         short:"フォーク", speed:[126,137], g:13.8, ah:0.45, side:"arm"  },
+  slider:  { key:"slider",   name:"スライダー",       short:"スライダー", speed:[128,141], g:10.2, ah:4.0,  side:"glove"},
+};
+const PITCH_ORDER = ["fastball","change","curve","shuuto","fork","slider"];
+
+const RELEASE_Z = -16.4;     // 投球腕リリースのZ座標(打者から見た奥行き)
+const MOUND_Z   = -15.3;
+const PLATE_Z   = 0;
+const G_CONST   = 9.8;
+
+const state = {
+  pitcherHand:"R",   // "R" | "L" | "RANDOM"
+  batterHand:"R",    // "R" | "L"
+  mode:"watch",      // "watch" | "bat"
+  dominant:"R",      // バットを持つ手
+  enabled:{fastball:true,change:true,curve:true,shuuto:true,fork:true,slider:true},
+};
+
+/* ============================================================
+   DOM: 設定パネル
+   ============================================================ */
+const chipWrap = document.getElementById("chipPitches");
+PITCH_ORDER.forEach(key=>{
+  const p = PITCH_TYPES[key];
+  const el = document.createElement("div");
+  el.className = "chip on";
+  el.dataset.key = key;
+  el.innerHTML = '<span class="dot"></span>'+p.name;
+  el.addEventListener("click", ()=>{
+    state.enabled[key] = !state.enabled[key];
+    el.classList.toggle("on", state.enabled[key]);
+    syncFlatSettingsText();
+  });
+  chipWrap.appendChild(el);
+});
+
+function wireSeg(id, onSet){
+  const wrap = document.getElementById(id);
+  wrap.querySelectorAll("button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      wrap.querySelectorAll("button").forEach(b=>b.classList.remove("on"));
+      btn.classList.add("on");
+      onSet(btn.dataset.v);
+    });
+  });
+}
+wireSeg("segPitcher", v=>{ state.pitcherHand=v; syncFlatSettingsText(); });
+wireSeg("segBatter",  v=>{ state.batterHand=v; syncFlatSettingsText(); });
+wireSeg("segMode",    v=>{
+  state.mode=v;
+  document.getElementById("dominantRow").classList.toggle("show", v==="bat");
+  document.getElementById("swingBtn").classList.toggle("show", v==="bat");
+  syncFlatSettingsText();
+});
+wireSeg("segDominant",v=>{ state.dominant=v; syncFlatSettingsText(); });
+
+function handLabel(h){ return h==="R"?"右":(h==="L"?"左":"ランダム"); }
+function syncFlatSettingsText(){
+  document.getElementById("flatSettings").innerHTML =
+    "投手:<b>"+handLabel(state.pitcherHand)+"</b>&nbsp; 打者:<b>"+handLabel(state.batterHand)+"</b>&nbsp; "+
+    "モード:<b>"+(state.mode==="bat"?"バッティング":"見るだけ")+"</b>";
+}
+syncFlatSettingsText();
+
+/* ============================================================
+   Three.js 基本セットアップ
+   ============================================================ */
+const container = document.getElementById("app");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8fc7e8);
+scene.fog = new THREE.Fog(0x8fc7e8, 24, 70);
+
+const camera = new THREE.PerspectiveCamera(80, innerWidth/innerHeight, 0.05, 200);
+camera.position.set(0, 1.62, 0);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType("local-floor"); // 床面を基準にしないとカメラが地面の高さに埋まって何も見えなくなる
+container.appendChild(renderer.domElement);
+
+window.addEventListener("resize", ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// dolly: プレイヤーの立ち位置(打席)。カメラはこの子として、XR中は自動でヘッドセット姿勢が反映される
+const dolly = new THREE.Group();
+dolly.add(camera);
+scene.add(dolly);
+
+function updateBatterStance(){
+  // 右打者は三塁側(-x)、左打者は一塁側(+x)の打席に立つ
+  const xOff = state.batterHand==="R" ? -0.34 : 0.34;
+  dolly.position.set(xOff, 0, 0.35);
+}
+updateBatterStance();
+
+/* ---------------- ライト ---------------- */
+scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x3a5a30, 0.95));
+const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+sun.position.set(8, 14, 6);
+scene.add(sun);
+
+/* ---------------- グラウンド ---------------- */
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(70, 48),
+  new THREE.MeshLambertMaterial({color:0x3f7a45})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+const infield = new THREE.Mesh(
+  new THREE.CircleGeometry(13, 40),
+  new THREE.MeshLambertMaterial({color:0xb5793f})
+);
+infield.rotation.x = -Math.PI/2;
+infield.position.set(0, 0.01, -10);
+scene.add(infield);
+
+const mound = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.6, 1.9, 0.26, 24),
+  new THREE.MeshLambertMaterial({color:0xa06a38})
+);
+mound.position.set(0, 0.13, MOUND_Z);
+scene.add(mound);
+
+const rubber = new THREE.Mesh(
+  new THREE.BoxGeometry(0.5, 0.06, 0.15),
+  new THREE.MeshLambertMaterial({color:0xf2ede1})
+);
+rubber.position.set(0, 0.29, MOUND_Z);
+scene.add(rubber);
+
+// home plate (五角形・厚み+縁取りで視認性を確保)
+function pentagonShape(scale){
+  const s = new THREE.Shape();
+  s.moveTo(-0.215*scale, 0.22*scale);
+  s.lineTo(0.215*scale, 0.22*scale);
+  s.lineTo(0.215*scale, -0.03*scale);
+  s.lineTo(0, -0.22*scale);
+  s.lineTo(-0.215*scale, -0.03*scale);
+  s.closePath();
+  return s;
+}
+const plateOutline = new THREE.Mesh(
+  new THREE.ShapeGeometry(pentagonShape(1.28)),
+  new THREE.MeshBasicMaterial({color:0x11202f, side:THREE.DoubleSide})
+);
+plateOutline.rotation.x = -Math.PI/2;
+plateOutline.position.set(0, 0.007, PLATE_Z);
+scene.add(plateOutline);
+
+const plate = new THREE.Mesh(
+  new THREE.ExtrudeGeometry(pentagonShape(1.08), {depth:0.04, bevelEnabled:false}),
+  new THREE.MeshStandardMaterial({color:0xf6f2e8, roughness:0.7})
+);
+plate.rotation.x = -Math.PI/2;
+plate.position.set(0, 0.012, PLATE_Z);
+scene.add(plate);
+
+function batterBoxLines(xSign){
+  const g = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({color:0xf2ede1});
+  const w=0.9, d=1.6, cx = xSign*0.75, cz = PLATE_Z+0.15;
+  const pts = [
+    new THREE.Vector3(cx-w/2,0.015,cz-d/2), new THREE.Vector3(cx+w/2,0.015,cz-d/2),
+    new THREE.Vector3(cx+w/2,0.015,cz+d/2), new THREE.Vector3(cx-w/2,0.015,cz+d/2),
+    new THREE.Vector3(cx-w/2,0.015,cz-d/2)
+  ];
+  g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+  return g;
+}
+scene.add(batterBoxLines(1));
+scene.add(batterBoxLines(-1));
+
+// 外野フェンス(円弧)+ スタンド代わりのブロック
+const fenceGroup = new THREE.Group();
+const fenceMat = new THREE.MeshLambertMaterial({color:0x1f4a2c});
+const standMat = new THREE.MeshLambertMaterial({color:0x5b6472});
+for(let i=-8;i<=8;i++){
+  const ang = (i/8)*(Math.PI*0.42) + Math.PI; // 打者側から見て奥側の弧
+  const r = 58;
+  const x = Math.sin(ang)*r, z = Math.cos(ang)*r + (-10);
+  const seg = new THREE.Mesh(new THREE.BoxGeometry(9,2.4,0.4), fenceMat);
+  seg.position.set(x, 1.2, z);
+  seg.lookAt(0,1.2,-10);
+  fenceGroup.add(seg);
+  const stand = new THREE.Mesh(new THREE.BoxGeometry(9,6,3), standMat);
+  stand.position.set(x*1.05, 5.4, z*1.05);
+  stand.lookAt(0,5.4,-10);
+  fenceGroup.add(stand);
+}
+scene.add(fenceGroup);
+
+/* ---------------- スコアボード ---------------- */
+const boardCanvas = document.createElement("canvas");
+boardCanvas.width = 1024; boardCanvas.height = 512;
+const boardCtx = boardCanvas.getContext("2d");
+const boardTex = new THREE.CanvasTexture(boardCanvas);
+const scoreboard = new THREE.Mesh(
+  new THREE.PlaneGeometry(11, 5.5),
+  new THREE.MeshBasicMaterial({map:boardTex})
+);
+scoreboard.position.set(0, 8.2, -34);
+scene.add(scoreboard);
+const boardPost = new THREE.Mesh(new THREE.BoxGeometry(0.5,8.2,0.5), standMat);
+boardPost.position.set(0, 4.1, -34);
+scene.add(boardPost);
+
+function drawBoard(typeName, speedKmh, resultText, resultGood){
+  const c = boardCtx;
+  c.fillStyle = "#050a10"; c.fillRect(0,0,1024,512);
+  c.strokeStyle = "#8a5d31"; c.lineWidth = 14; c.strokeRect(7,7,1010,498);
+  c.fillStyle = "#7a8598"; c.font = "600 34px Oswald, sans-serif"; c.textAlign="center";
+  c.fillText("N P B   P I T C H   S I M U L A T O R", 512, 70);
+  c.fillStyle = "#f2ede1"; c.font = "700 64px 'Noto Sans JP', sans-serif";
+  c.fillText(typeName || "PLAY BALL", 512, 190);
+  c.fillStyle = "#f4a93b"; c.font = "700 150px Oswald, sans-serif";
+  c.fillText(speedKmh ? String(speedKmh) : "---", 512, 350);
+  c.fillStyle = "#7a8598"; c.font="600 30px Oswald, sans-serif"; c.textAlign="left";
+  c.fillText("km/h", 660, 350);
+  if(resultText){
+    c.fillStyle = resultGood ? "#5fd07a" : "#e05a4a";
+    c.font = "700 48px 'Noto Sans JP', sans-serif"; c.textAlign="center";
+    c.fillText(resultText, 512, 470);
+  }
+  boardTex.needsUpdate = true;
+}
+drawBoard("PLAY BALL", null, null, false);
+
+/* ---------------- ボール ---------------- */
+const ballGroup = new THREE.Group();
+const ball = new THREE.Mesh(
+  new THREE.SphereGeometry(0.0366, 20, 20),
+  new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.55})
+);
+ballGroup.add(ball);
+const seamMat = new THREE.MeshBasicMaterial({color:0xb23a2f});
+const seam1 = new THREE.Mesh(new THREE.TorusGeometry(0.037,0.003,6,24), seamMat);
+seam1.rotation.x = Math.PI/2.4; seam1.rotation.y = 0.5;
+const seam2 = seam1.clone(); seam2.rotation.x = -Math.PI/2.4; seam2.rotation.z = 1.2;
+ballGroup.add(seam1, seam2);
+ballGroup.visible = false;
+scene.add(ballGroup);
+
+// --- 視認性ブースト用グロー(遠いほど大きく見せ、近づくほど実物大へ収束させる) ---
+function makeGlowTexture(){
+  const cv = document.createElement("canvas"); cv.width = cv.height = 64;
+  const ctx = cv.getContext("2d");
+  const grad = ctx.createRadialGradient(32,32,0, 32,32,32);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.4, "rgba(255,250,230,0.75)");
+  grad.addColorStop(1, "rgba(255,250,230,0)");
+  ctx.fillStyle = grad; ctx.fillRect(0,0,64,64);
+  return new THREE.CanvasTexture(cv);
+}
+const ballGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: makeGlowTexture(), transparent:true, depthWrite:false, blending:THREE.AdditiveBlending
+}));
+ballGlow.scale.setScalar(0.09);
+ballGroup.add(ballGlow);
+
+// --- 軌道の残像トレイル(球の軌跡と変化がPC画面でも追いやすいように) ---
+const TRAIL_LEN = 70; // 投球全体の軌跡を残して曲がりが一目で分かるようにする
+const trailGeo = new THREE.BufferGeometry();
+trailGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(TRAIL_LEN*3), 3));
+const trailLine = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({color:0xfff0c2, transparent:true, opacity:0.6}));
+trailLine.frustumCulled = false;
+trailLine.visible = false;
+scene.add(trailLine);
+let trailPts = [];
+function resetTrail(){ trailPts = []; trailLine.visible = false; }
+const _camWorldPos = new THREE.Vector3();
+
+/* ---------------- 投手 ---------------- */
+function easeOutCubic(x){ return 1-Math.pow(1-x,3); }
+function easeInQuad(x){ return x*x; }
+function easeInCubic(x){ return x*x*x; }
+
+function buildPitcher(){
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshLambertMaterial({color:0xe7e7ea});
+  const pantsMat = new THREE.MeshLambertMaterial({color:0x1b3350});
+  const skinMat = new THREE.MeshLambertMaterial({color:0xe0b090});
+  const capMat = new THREE.MeshLambertMaterial({color:0x1b3350});
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46,0.62,0.28), bodyMat);
+  torso.position.y = 1.05;
+  g.add(torso);
+
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.42,0.22,0.26), pantsMat);
+  hips.position.y = 0.72;
+  g.add(hips);
+
+  // 脚(股関節ピボット付き。ワインドアップの足上げアニメーション用)
+  function makeLeg(xSide){
+    const pivot = new THREE.Group();
+    pivot.position.set(xSide*0.12, 0.83, 0);
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.62,0.18), pantsMat);
+    leg.position.y = -0.31;
+    pivot.add(leg);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.17,0.07,0.27), pantsMat);
+    foot.position.set(0,-0.65,0.06);
+    pivot.add(foot);
+    return pivot;
+  }
+  const legLeft = makeLeg(-1);
+  const legRight = makeLeg(1);
+  g.add(legLeft, legRight);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15,16,16), skinMat);
+  head.position.y = 1.5; g.add(head);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.16,16,10,0,Math.PI*2,0,Math.PI/2), capMat);
+  cap.position.y = 1.55; g.add(cap);
+
+  // 腕(肩ピボット -> グループ)
+  function makeArm(){
+    const shoulder = new THREE.Group();
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.055,0.34,10), bodyMat);
+    upper.position.y = -0.17;
+    shoulder.add(upper);
+    const elbow = new THREE.Group();
+    elbow.position.y = -0.34;
+    const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.045,0.32,10), skinMat);
+    lower.position.y = -0.16;
+    elbow.add(lower);
+    shoulder.add(elbow);
+    return {shoulder, elbow};
+  }
+  const throwArm = makeArm();
+  const restArm = makeArm();
+  throwArm.shoulder.position.y = 1.28;
+  restArm.shoulder.position.y = 1.28;
+  g.add(throwArm.shoulder, restArm.shoulder);
+  restArm.shoulder.rotation.z = 2.7; // 体側に下ろす(グラブ側は動かさない)
+
+  return {group:g, throwArm, restArm, legLeft, legRight};
+}
+const pitcher = buildPitcher();
+pitcher.group.scale.setScalar(1.32); // 実物より一回り大きく見せて視認性を確保
+scene.add(pitcher.group);
+
+function layoutPitcher(hand){
+  const x = hand==="R" ? -0.55 : 0.55;
+  pitcher.group.position.set(x, 0.26, MOUND_Z);
+  pitcher.group.rotation.set(0,0,0);
+  const side = hand==="R" ? -1 : 1;
+  pitcher.throwArm.shoulder.position.x = side*0.24;
+  pitcher.restArm.shoulder.position.x = -side*0.24;
+  pitcher.throwArm.shoulder.rotation.set(0,0, side*2.6);
+  pitcher.throwArm.elbow.rotation.x = 0;
+  pitcher.restArm.shoulder.rotation.set(0,0, side*2.7);
+  // 振り上げる足は投球腕と反対側(グラブ側)
+  pitcher.kickLeg = side>0 ? pitcher.legLeft : pitcher.legRight;
+  pitcher.plantLeg = side>0 ? pitcher.legRight : pitcher.legLeft;
+  pitcher.kickLeg.rotation.set(0,0,0);
+  pitcher.plantLeg.rotation.set(0,0,0);
+}
+layoutPitcher("R");
+
+/* ---------------- バット ---------------- */
+function makeBat(){
+  const g = new THREE.Group();
+  const bat = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.034,0.014,0.82,12),
+    new THREE.MeshLambertMaterial({color:0xc8894b})
+  );
+  bat.position.y = 0.42;
+  g.add(bat);
+  g.userData.sweetSpotLocal = new THREE.Vector3(0, 0.78, 0);
+  return g;
+}
+
+/* ============================================================
+   投球パラメータ計算
+   ============================================================ */
+function pickPitcherHand(){
+  if(state.pitcherHand==="RANDOM") return Math.random()<0.5 ? "R":"L";
+  return state.pitcherHand;
+}
+function pickPitchKey(){
+  const list = PITCH_ORDER.filter(k=>state.enabled[k]);
+  const pool = list.length ? list : PITCH_ORDER;
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+function rand(a,b){ return a + Math.random()*(b-a); }
+
+function computePitch(){
+  const hand = pickPitcherHand();
+  const key = pickPitchKey();
+  const def = PITCH_TYPES[key];
+  const speedKmh = Math.round(rand(def.speed[0], def.speed[1]));
+  const speedMs = speedKmh/3.6;
+
+  const R = new THREE.Vector3(
+    (hand==="R"?-0.55:0.55) + rand(-0.05,0.05),
+    1.82 + rand(-0.05,0.05),
+    RELEASE_Z
+  );
+  const T = new THREE.Vector3(
+    rand(-0.06,0.06) + (state.batterHand==="R"? -0.02:0.02),
+    rand(0.55,1.05),
+    PLATE_Z
+  );
+
+  const dist = R.distanceTo(new THREE.Vector3(T.x,T.y,T.z));
+  const tTotal = dist/speedMs;
+
+  let sign;
+  if(def.side==="glove"){ sign = hand==="R" ? 1 : -1; }
+  else { sign = hand==="R" ? -1 : 1; }
+
+  const vz0 = (T.z - R.z)/tTotal;
+  const vy0 = (T.y - R.y + 0.5*def.g*tTotal*tTotal)/tTotal;
+  const vx0 = (T.x - R.x - 0.5*def.ah*sign*tTotal*tTotal)/tTotal;
+
+  return { hand, key, def, speedKmh, R, T, vx0, vy0, vz0, ah:def.ah*sign, g:def.g, tTotal, spinDir: sign };
+}
+
+/* ============================================================
+   投球シーケンス / 状態
+   ============================================================ */
+let clock = new THREE.Clock();
+let phase = "idle"; // idle | windup | flight | result
+let current = null;
+let phaseT = 0;
+const WINDUP_TIME = 1.15;
+let hitRegistered = false;
+let lastHitInfo = null;
+
+function startThrow(){
+  if(phase!=="idle") return;
+  current = computePitch();
+  layoutPitcher(current.hand);
+  phase = "windup";
+  phaseT = 0;
+  hitRegistered = false;
+  ballGroup.visible = false;
+  resetTrail();
+  drawBoard(current.def.name, null, null, false);
+  if(menuBuilt) drawMenu();
+  document.getElementById("bType").textContent = current.def.name + "  投球準備中…";
+  document.getElementById("bSpeed").innerHTML = "--<span>km/h</span>";
+  document.getElementById("bResult").textContent = "";
+  document.getElementById("bResult").className = "bresult";
+}
+
+function releaseBall(){
+  ballGroup.visible = true;
+  ballGroup.position.copy(current.R);
+  drawBoard(current.def.name, current.speedKmh, null, false);
+  document.getElementById("bType").textContent = current.def.name;
+  document.getElementById("bSpeed").innerHTML = current.speedKmh+"<span>km/h</span>";
+  phase = "flight";
+  phaseT = 0;
+}
+
+function finishPitch(resultText, good){
+  phase = "result";
+  phaseT = 0;
+  // トレイルは結果表示中も残し、曲がり方を後から確認できるようにする(次の投球開始時にリセット)
+  drawBoard(current.def.name, current.speedKmh, resultText, good);
+  const rEl = document.getElementById("bResult");
+  rEl.textContent = resultText;
+  rEl.className = "bresult" + (good?" good":"");
+}
+
+/* ---------------- バット判定 ---------------- */
+const activeBats = { flat:null };
+function getBatSweetSpotWorld(batObj){
+  const p = batObj.userData.sweetSpotLocal.clone();
+  batObj.updateMatrixWorld(true);
+  return batObj.localToWorld(p);
+}
+
+function checkHit(batWorldPos){
+  if(hitRegistered || phase!=="flight") return;
+  const d = batWorldPos.distanceTo(ballGroup.position);
+  if(d < 0.22){
+    hitRegistered = true;
+    const z = ballGroup.position.z; // 0付近が理想
+    let text, good;
+    if(z > 0.28){ text="差し込まれた…ファウル"; good=false; }
+    else if(z < -0.32){ text="泳がされた…空振り"; good=false; }
+    else if(Math.abs(z) < 0.1){ text="ジャストミート！快音！"; good=true; }
+    else { text="ミート！ゴロ／フライ"; good=true; }
+    // 打球方向へ弾き飛ばす演出
+    ballGroup.userData.hitVel = new THREE.Vector3((Math.random()-0.5)*6, 3+Math.random()*3, -6-Math.random()*4);
+    finishPitch(text, good);
+  }
+}
+
+/* ============================================================
+   VR コントローラー & 3D メニュー
+   ============================================================ */
+const controllerHandedness = {};
+const controllers = [0,1].map(i=>{
+  const c = renderer.xr.getController(i);
+  c.addEventListener("connected", (e)=>{ controllerHandedness[i] = e.data.handedness; buildMenuIfReady(); attachBatIfNeeded(); });
+  c.addEventListener("disconnected", ()=>{ controllerHandedness[i] = null; });
+  const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]);
+  const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({color:0xf4a93b}));
+  line.name = "ray"; line.scale.z = 0.4;
+  c.add(line);
+  dolly.add(c);
+  c.addEventListener("selectstart", ()=>onControllerSelect(i));
+  return c;
+});
+
+let vrBat = null;
+function attachBatIfNeeded(){
+  if(state.mode!=="bat" || !renderer.xr.isPresenting) return;
+  const wantHand = state.dominant==="R" ? "right" : "left";
+  for(let i=0;i<2;i++){
+    if(controllerHandedness[i]===wantHand && !vrBat){
+      vrBat = makeBat();
+      controllers[i].add(vrBat);
+    }
+  }
+}
+function detachBat(){
+  if(vrBat && vrBat.parent) vrBat.parent.remove(vrBat);
+  vrBat = null;
+}
+
+/* ---------------- メニューパネル(canvas texture) ---------------- */
+const MENU_W=512, MENU_H=460;
+const menuCanvas = document.createElement("canvas");
+menuCanvas.width=MENU_W; menuCanvas.height=MENU_H;
+const menuCtx = menuCanvas.getContext("2d");
+const menuTex = new THREE.CanvasTexture(menuCanvas);
+const menuPanel = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.58, 0.52),
+  new THREE.MeshBasicMaterial({map:menuTex, transparent:true})
+);
+let menuButtons = [];
+
+function drawMenu(){
+  const c = menuCtx;
+  c.clearRect(0,0,MENU_W,MENU_H);
+  c.fillStyle = "rgba(10,20,32,0.92)";
+  roundRect(c,0,0,MENU_W,MENU_H,18); c.fill();
+  c.strokeStyle = "rgba(244,169,59,0.55)"; c.lineWidth=3;
+  roundRect(c,2,2,MENU_W-4,MENU_H-4,16); c.stroke();
+
+  c.textAlign="left"; c.fillStyle="#f4a93b";
+  c.font="700 20px sans-serif";
+  c.fillText("投球設定", 20, 34);
+
+  menuButtons = [];
+  let y = 52;
+  y = row(c,"投手", [["R","右投げ"],["L","左投げ"],["RANDOM","ランダム"]], state.pitcherHand, "pitcher", y);
+  y = row(c,"打者", [["R","右打者"],["L","左打者"]], state.batterHand, "batter", y);
+  y = row(c,"モード", [["watch","見るだけ"],["bat","バッティング"]], state.mode, "mode", y);
+  if(state.mode==="bat"){
+    y = row(c,"利き手", [["R","右手"],["L","左手"]], state.dominant, "dominant", y);
+  }
+  // 球種チップ
+  c.fillStyle="#a9b3c2"; c.font="600 14px sans-serif"; c.fillText("球種", 20, y+14);
+  y += 22;
+  let cx = 20;
+  PITCH_ORDER.forEach((k)=>{
+    const p = PITCH_TYPES[k];
+    const w = 78;
+    if(cx + w > MENU_W-20){ cx = 20; y += 34; }
+    const on = state.enabled[k];
+    c.fillStyle = on? "#f4a93b" : "#1b3350";
+    roundRect(c, cx, y, w-6, 28, 8); c.fill();
+    c.fillStyle = on? "#0a1420" : "#a9b3c2";
+    c.font="600 12px sans-serif"; c.textAlign="center";
+    c.fillText(p.short, cx+(w-6)/2, y+18);
+    menuButtons.push({x:cx,y:y,w:w-6,h:28,action:()=>{ state.enabled[k]=!state.enabled[k]; drawMenu(); }});
+    cx += w;
+  });
+  y += 40;
+
+  // 投げるボタン
+  c.fillStyle = phase==="idle" ? "#c0392b" : "#5b6472";
+  roundRect(c, 20, y, MENU_W-40, 52, 12); c.fill();
+  c.fillStyle="#fff"; c.font="700 22px sans-serif"; c.textAlign="center";
+  c.fillText(phase==="idle" ? "投げる ▶" : "投球中…", MENU_W/2, y+34);
+  menuButtons.push({x:20,y:y,w:MENU_W-40,h:52, action:()=>{ startThrow(); }});
+
+  menuTex.needsUpdate = true;
+}
+function row(c, label, opts, current, group, y){
+  c.fillStyle="#a9b3c2"; c.font="600 14px sans-serif"; c.textAlign="left";
+  c.fillText(label, 20, y+14);
+  let x = 90;
+  const w = (MENU_W-20-x)/opts.length - 6;
+  opts.forEach(([v,l])=>{
+    const on = current===v;
+    c.fillStyle = on? "#f4a93b":"#1b3350";
+    roundRect(c,x,y,w,28,8); c.fill();
+    c.fillStyle = on? "#0a1420":"#a9b3c2";
+    c.font="600 12px sans-serif"; c.textAlign="center";
+    c.fillText(l, x+w/2, y+18);
+    menuButtons.push({x,y,w,h:28, action:()=>{
+      if(group==="pitcher") state.pitcherHand=v;
+      if(group==="batter"){ state.batterHand=v; updateBatterStance(); }
+      if(group==="mode"){ state.mode=v; if(v!=="bat") detachBat(); else attachBatIfNeeded(); }
+      if(group==="dominant"){ state.dominant=v; detachBat(); attachBatIfNeeded(); }
+      drawMenu();
+    }});
+    x += w+6;
+  });
+  return y+36;
+}
+function roundRect(c,x,y,w,h,r){
+  c.beginPath();
+  c.moveTo(x+r,y);
+  c.arcTo(x+w,y,x+w,y+h,r);
+  c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r);
+  c.arcTo(x,y,x+w,y,r);
+  c.closePath();
+}
+
+let menuBuilt = false;
+function buildMenuIfReady(){
+  if(menuBuilt) return;
+  menuBuilt = true;
+  menuPanel.position.set(0.85, 1.35, -0.55);
+  menuPanel.rotation.y = -0.55;
+  dolly.add(menuPanel);
+  drawMenu();
+}
+
+const raycaster = new THREE.Raycaster();
+function onControllerSelect(i){
+  // メニューはいつでも操作可(投球中はボタン自体が「投球中…」表示になり無効化される)
+  if(!menuBuilt) return;
+  const tempMatrix = new THREE.Matrix4();
+  tempMatrix.identity().extractRotation(controllers[i].matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(controllers[i].matrixWorld);
+  raycaster.ray.direction.set(0,0,-1).applyMatrix4(tempMatrix);
+  const hits = raycaster.intersectObject(menuPanel);
+  if(hits.length){
+    const uv = hits[0].uv;
+    const cx = uv.x*MENU_W, cy = (1-uv.y)*MENU_H;
+    for(const b of menuButtons){
+      if(cx>=b.x && cx<=b.x+b.w && cy>=b.y && cy<=b.y+b.h){ b.action(); break; }
+    }
+  }
+}
+
+/* ============================================================
+   VR ボタン(独自実装)
+   ============================================================ */
+const enterVrBtn = document.getElementById("enterVr");
+const vrNote = document.getElementById("vrNote");
+let xrSupported = false;
+
+// 診断しやすいよう、判定結果やエラー内容をそのままボタン下に表示する
+enterVrBtn.disabled = false; // 判定がどう転んでも一応押せるようにしておく
+(async function checkXR(){
+  try{
+    if(typeof navigator.xr === "undefined"){
+      vrNote.textContent = "診断: navigator.xr が存在しません(このページではWebXRが許可されていない可能性)。下のボタンは押せますが失敗する可能性があります。";
+      return;
+    }
+    if(typeof navigator.xr.isSessionSupported !== "function"){
+      vrNote.textContent = "診断: navigator.xr.isSessionSupported が見つかりません。";
+      return;
+    }
+    const ok = await navigator.xr.isSessionSupported("immersive-vr");
+    xrSupported = ok;
+    vrNote.textContent = ok
+      ? "Oculus / Meta Quest のブラウザで動作確認済み"
+      : "診断: isSessionSupported が false を返しました(この端末/ページではVR不可と判定)。";
+  }catch(err){
+    vrNote.textContent = "診断: VR対応チェックでエラー → " + (err && err.message ? err.message : String(err));
+  }
+})();
+
+let currentSession = null;
+enterVrBtn.addEventListener("click", async ()=>{
+  try{
+    if(typeof navigator.xr === "undefined"){
+      vrNote.textContent = "エラー: navigator.xr が存在しないため開始できません。";
+      return;
+    }
+    let session;
+    try{
+      session = await navigator.xr.requestSession("immersive-vr", {optionalFeatures:["local-floor"]});
+    }catch(reqErr){
+      // optionalFeaturesの指定自体を拒否する実装向けに、何も指定せず再試行する
+      console.warn("requestSession with optionalFeatures failed, retrying with no options:", reqErr);
+      session = await navigator.xr.requestSession("immersive-vr");
+    }
+    currentSession = session;
+    session.addEventListener("end", ()=>{
+      document.getElementById("overlay").style.display="flex";
+      detachBat();
+      currentSession = null;
+    });
+    try{
+      await renderer.xr.setSession(session);
+    }catch(setErr){
+      // three.js側の初期化(参照空間の取得など)に失敗した場合は、宙ぶらりんにせず必ずセッションを終了する
+      try{ await session.end(); }catch(e){}
+      throw setErr;
+    }
+    document.getElementById("overlay").style.display="none";
+    document.getElementById("flatHud").classList.remove("show");
+    updateBatterStance();
+    layoutPitcher(state.pitcherHand==="RANDOM"?"R":state.pitcherHand);
+    phase="idle";
+  }catch(err){
+    vrNote.textContent = "エラー: VRセッションを開始できませんでした → " + (err && err.message ? err.message : String(err));
+  }
+});
+
+/* ---------------- 画面のみモード(デスクトップ確認用) ---------------- */
+const flatHud = document.getElementById("flatHud");
+document.getElementById("enterFlat").addEventListener("click", ()=>{
+  document.getElementById("overlay").style.display="none";
+  flatHud.classList.add("show");
+  updateBatterStance();
+  layoutPitcher(state.pitcherHand==="RANDOM"?"R":state.pitcherHand);
+  phase="idle";
+});
+document.getElementById("exitFlat").addEventListener("click", ()=>{
+  flatHud.classList.remove("show");
+  document.getElementById("overlay").style.display="flex";
+});
+document.getElementById("throwBtn").addEventListener("click", startThrow);
+
+// 簡易バット(画面のみモード): カメラ前方に固定したバットを、スイングボタンで振る
+const flatBat = makeBat();
+flatBat.visible = false;
+camera.add(flatBat);
+flatBat.position.set(0.28,-0.35,-0.55);
+flatBat.rotation.z = 1.4;
+let flatSwingT = -1;
+document.getElementById("swingBtn").addEventListener("click", ()=>{
+  if(phase!=="flight" || hitRegistered) return;
+  flatSwingT = 0;
+});
+
+// デスクトップ視点ドラッグ
+let dragging=false, lastX=0, lastY=0, yaw=0, pitchX=0.16;
+renderer.domElement.addEventListener("pointerdown", e=>{
+  if(renderer.xr.isPresenting) return;
+  dragging=true; lastX=e.clientX; lastY=e.clientY;
+});
+window.addEventListener("pointerup", ()=>dragging=false);
+window.addEventListener("pointermove", e=>{
+  if(!dragging || renderer.xr.isPresenting) return;
+  yaw -= (e.clientX-lastX)*0.0035;
+  pitchX -= (e.clientY-lastY)*0.0035;
+  pitchX = Math.max(-0.6, Math.min(0.6, pitchX));
+  lastX=e.clientX; lastY=e.clientY;
+});
+
+/* ============================================================
+   メインループ
+   ============================================================ */
+function loop(){
+try{
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if(!renderer.xr.isPresenting){
+    camera.rotation.set(pitchX, yaw, 0, "YXZ");
+  } else {
+    if(state.mode==="bat" && !vrBat) attachBatIfNeeded();
+  }
+
+  // 投手ワインドアップ(足を上げて溜め → 体を開きながら腕を振り抜く)
+  if(phase==="windup"){
+    phaseT += dt;
+    const t = Math.min(phaseT/WINDUP_TIME, 1);
+    const side = current.hand==="R" ? -1 : 1;
+
+    // 足上げ(0〜0.42) → 一瞬の溜め(0.42〜0.58) → 踏み込み(0.58〜1.0)
+    let kickAngle;
+    if(t < 0.42){ kickAngle = -1.05*easeOutCubic(t/0.42); }
+    else if(t < 0.58){ kickAngle = -1.05; }
+    else { kickAngle = -1.05*(1-easeInQuad((t-0.58)/0.42)); }
+    if(pitcher.kickLeg) pitcher.kickLeg.rotation.x = kickAngle;
+    if(pitcher.plantLeg) pitcher.plantLeg.rotation.x = kickAngle*0.08;
+
+    // 腕:下げ(REST)→高く振り上げて溜め(COCK)→一気に振り抜く(RELEASE)
+    const REST = side*2.6, COCK = side*-1.15, RELEASE = side*-3.7;
+    let armAngle, elbowAngle;
+    if(t < 0.45){
+      const k = easeOutCubic(t/0.45);
+      armAngle = REST + (COCK-REST)*k; elbowAngle = -0.3*k;
+    } else if(t < 0.6){
+      armAngle = COCK; elbowAngle = -0.9;
+    } else {
+      const k = easeInCubic((t-0.6)/0.4);
+      armAngle = COCK + (RELEASE-COCK)*k; elbowAngle = -0.9 + 0.9*k;
+    }
+    pitcher.throwArm.shoulder.rotation.z = armAngle;
+    pitcher.throwArm.elbow.rotation.x = elbowAngle;
+
+    // 体の開き(タメて一気に開放)+前傾
+    const tuck = t<0.58 ? Math.min(t/0.42,1) : 1-easeInQuad((t-0.58)/0.42);
+    const openUp = t<0.58 ? 0 : easeInQuad((t-0.58)/0.42);
+    pitcher.group.rotation.y = side*(-0.42*tuck + 0.2*openUp);
+    pitcher.group.rotation.x = 0.22*Math.sin(t*Math.PI);
+
+    if(t>=1){ releaseBall(); }
+  } else {
+    const restSide = current ? (current.hand==="R"?-1:1) : -1;
+    pitcher.throwArm.shoulder.rotation.z += ((restSide*2.6) - pitcher.throwArm.shoulder.rotation.z)*0.08;
+    pitcher.throwArm.elbow.rotation.x *= 0.85;
+    pitcher.group.rotation.x *= 0.85;
+    pitcher.group.rotation.y *= 0.85;
+    if(pitcher.kickLeg) pitcher.kickLeg.rotation.x *= 0.85;
+    if(pitcher.plantLeg) pitcher.plantLeg.rotation.x *= 0.85;
+  }
+
+  // 飛翔中のボール
+  if(phase==="flight"){
+    phaseT += dt;
+    const t = Math.min(phaseT, current.tTotal + 0.5);
+    if(t <= current.tTotal){
+      const x = current.R.x + current.vx0*t + 0.5*current.ah*t*t;
+      const y = current.R.y + current.vy0*t - 0.5*current.g*t*t;
+      const z = current.R.z + current.vz0*t;
+      ballGroup.position.set(x,y,z);
+      ballGroup.rotation.x += dt*(18+current.speedKmh*0.05);
+      ballGroup.rotation.y += dt*(current.ah*2.2);
+
+      // 遠いほどグローを大きく見せ、接近するにつれ実物大へ自然に収束させる
+      camera.getWorldPosition(_camWorldPos);
+      const distToCam = _camWorldPos.distanceTo(ballGroup.position);
+      const boostK = renderer.xr.isPresenting ? 0.012 : 0.022;
+      ballGlow.scale.setScalar(Math.max(distToCam*boostK, 0.075));
+
+      // 軌跡トレイル更新
+      trailPts.push(ballGroup.position.clone());
+      if(trailPts.length > TRAIL_LEN) trailPts.shift();
+      if(trailPts.length >= 2){
+        trailLine.visible = true;
+        const arr = trailLine.geometry.attributes.position.array;
+        for(let k=0;k<TRAIL_LEN;k++){
+          const p = trailPts[Math.min(k, trailPts.length-1)];
+          arr[k*3]=p.x; arr[k*3+1]=p.y; arr[k*3+2]=p.z;
+        }
+        trailLine.geometry.attributes.position.needsUpdate = true;
+      }
+    } else if(!hitRegistered){
+      // ゾーン通過後、まだ判定がなければ結果を出す
+      const z = ballGroup.position.z;
+      ballGroup.position.z += dt*current.vz0*0.6;
+      ballGroup.position.y -= dt*2.0;
+      if(t > current.tTotal + 0.18){
+        if(state.mode==="bat"){
+          finishPitch(z<0.1 ? "空振り三振…" : "見逃し", false);
+        } else {
+          finishPitch("キャッチャーミット へ", true);
+        }
+      }
+    }
+    // 打撃判定
+    if(state.mode==="bat" && !hitRegistered){
+      if(renderer.xr.isPresenting && vrBat){
+        checkHit(getBatSweetSpotWorld(vrBat));
+      } else if(!renderer.xr.isPresenting && flatSwingT>=0){
+        checkHit(getBatSweetSpotWorld(flatBat));
+      }
+    }
+  }
+
+  // 画面のみモードのバットスイング演出
+  if(flatSwingT>=0){
+    flatSwingT += dt;
+    const t = Math.min(flatSwingT/0.28,1);
+    flatBat.rotation.y = -1.3 + t*2.2;
+    if(t>=1) flatSwingT=-1;
+  } else {
+    flatBat.rotation.y += (0 - flatBat.rotation.y)*0.2;
+  }
+  flatBat.visible = (state.mode==="bat") && flatHud.classList.contains("show") && (phase!=="idle");
+
+  // ヒット後の打球演出
+  if(ballGroup.userData.hitVel){
+    ballGroup.userData.hitVel.y -= dt*9.8;
+    ballGroup.position.addScaledVector(ballGroup.userData.hitVel, dt);
+    if(ballGroup.position.y < -2){ ballGroup.userData.hitVel=null; ballGroup.visible=false; }
+  }
+
+  // 結果表示後、自動でアイドルへ
+  if(phase==="result"){
+    phaseT += dt;
+    if(phaseT > 2.6){
+      phase="idle";
+      ballGroup.visible=false;
+      ballGroup.userData.hitVel=null;
+      document.getElementById("bType").textContent="投球を待っています";
+      if(menuBuilt) drawMenu();
+    }
+  }
+
+  renderer.render(scene, camera);
+}catch(err){
+  console.error("loop error:", err);
+  // 提示中でもメッセージは必ず記録しておく(VRを抜けた後に読めるように)
+  vrNote.textContent = "描画ループでエラー: " + (err && err.message ? err.message : String(err));
+  if(renderer.xr.isPresenting){
+    // 描画が壊れたまま固まらないよう、VRセッションを強制終了して2D画面に戻す
+    const s = renderer.xr.getSession && renderer.xr.getSession();
+    if(s){ s.end().catch(()=>{}); }
+  }
+}
+}
+renderer.setAnimationLoop(loop);
+
+})();
+</script>
