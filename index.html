@@ -616,13 +616,36 @@ function buildPitcher(){
   throwArm.shoulder.position.y = 1.28;
   restArm.shoulder.position.y = 1.28;
   g.add(throwArm.shoulder, restArm.shoulder);
-  restArm.shoulder.rotation.z = 2.7; // 体側に下ろす(グラブ側は動かさない)
+  restArm.shoulder.rotation.z = 0.3; // 体側に自然に下ろす(実測:2.7だと頭より高い位置に上がってしまっていた)
 
-  // グラブ(投球腕と反対側の手)
-  const glove = new THREE.Mesh(new THREE.SphereGeometry(0.075,10,10), gloveMat);
-  glove.scale.set(1,0.85,0.6);
-  glove.position.y = -0.34;
+  // グラブ(投球腕と反対側の手):ミット本体+親指+ステッチで、それらしい形に
+  const webMat = new THREE.MeshLambertMaterial({color:0x3a2013});
+  function makeGlove(){
+    const gg = new THREE.Group();
+    const pocket = new THREE.Mesh(new THREE.SphereGeometry(0.105,12,10), gloveMat);
+    pocket.scale.set(1,0.82,0.55);
+    gg.add(pocket);
+    const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.042,8,8), gloveMat);
+    thumb.position.set(0.078,0.03,0.025);
+    gg.add(thumb);
+    for(let i=-1;i<=1;i++){
+      const lace = new THREE.Mesh(new THREE.CylinderGeometry(0.006,0.006,0.1,6), webMat);
+      lace.rotation.z = Math.PI/2;
+      lace.rotation.y = i*0.4;
+      lace.position.set(-0.01,0,0.05);
+      gg.add(lace);
+    }
+    return gg;
+  }
+  const glove = makeGlove();
+  glove.position.y = -0.36;
+  glove.rotation.x = -0.35;
   restArm.elbow.add(glove);
+
+  // 投球腕側にも素手(グラブと違い、リリース後もそのまま見えている)
+  const throwHand = new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8), skinMat);
+  throwHand.position.y = -0.33;
+  throwArm.elbow.add(throwHand);
 
   return {group:g, throwArm, restArm, legLeft, legRight};
 }
@@ -639,7 +662,7 @@ function layoutPitcher(hand){
   pitcher.restArm.shoulder.position.x = -side*0.24;
   pitcher.throwArm.shoulder.rotation.set(0,0, side*2.6);
   pitcher.throwArm.elbow.rotation.x = 0;
-  pitcher.restArm.shoulder.rotation.set(0,0, side*2.7);
+  pitcher.restArm.shoulder.rotation.set(0,0, side*0.3);
   // 振り上げる足は投球腕と反対側(グラブ側)
   pitcher.kickLeg = side>0 ? pitcher.legLeft : pitcher.legRight;
   pitcher.plantLeg = side>0 ? pitcher.legRight : pitcher.legLeft;
@@ -1091,12 +1114,13 @@ try{
     const tRaw = Math.min(phaseT/WINDUP_TIME, 1);
     const side = current.hand==="R" ? -1 : 1;
     const REST = side*2.6, HANDS_UP = side*-0.35, COCK = side*-1.15, RELEASE = side*-3.7;
+    const GLOVE_LOW = side*0.3, GLOVE_UP = side*1.5; // グラブ側の腕:体側の自然な位置 / 胸元まで合わせる位置
 
     if(tRaw < WINDUP_PREP){
-      // 振りかぶり:両手を体の前で合わせながら一緒に振り上げる(ダイナミックな始動)
+      // 振りかぶり始動:両手を体の前で合わせながら一緒に振り上げる
       const k = easeOutCubic(tRaw/WINDUP_PREP);
       pitcher.throwArm.shoulder.rotation.z = REST + (HANDS_UP-REST)*k;
-      pitcher.restArm.shoulder.rotation.z = side*2.7 + (HANDS_UP-side*2.7)*k;
+      pitcher.restArm.shoulder.rotation.z = GLOVE_LOW + (GLOVE_UP-GLOVE_LOW)*k;
       pitcher.throwArm.elbow.rotation.x = 0;
       pitcher.group.rotation.x = -0.08*k;
     } else {
@@ -1133,9 +1157,10 @@ try{
       pitcher.throwArm.shoulder.rotation.z = armAngle;
       pitcher.throwArm.elbow.rotation.x = elbowAngle;
 
-      // グラブ側の腕は振りかぶり位置から自然に体側へ戻す
-      const gloveBack = Math.min(t/0.3, 1);
-      pitcher.restArm.shoulder.rotation.z = HANDS_UP + (side*2.7 - HANDS_UP)*easeOutCubic(gloveBack);
+      // グラブ側の腕は、両手が合わさった位置(GLOVE_UP)から素早く腰の高さ(GLOVE_LOW)まで下ろし、
+      // 投球腕が振り抜き終わるまでそこで保持する(上げっぱなしにしない)
+      const gloveDown = Math.min(t/0.3, 1);
+      pitcher.restArm.shoulder.rotation.z = GLOVE_UP + (GLOVE_LOW - GLOVE_UP)*easeOutCubic(gloveDown);
 
       // 体の開き(タメて一気に開放)+前傾
       const tuck = t<0.58 ? Math.min(t/0.42,1) : 1-easeInQuad((t-0.58)/0.42);
@@ -1153,7 +1178,7 @@ try{
     const RELEASE = side*-3.7, FOLLOW = side*-4.5;
     pitcher.throwArm.shoulder.rotation.z = RELEASE + (FOLLOW-RELEASE)*k;
     pitcher.throwArm.elbow.rotation.x = 0.55*k;           // 振り抜きで肘が軽く曲がる
-    pitcher.restArm.shoulder.rotation.z = side*2.7 - 0.5*k;
+    pitcher.restArm.shoulder.rotation.z = side*0.3 - 0.15*k;
     pitcher.group.rotation.x = 0.4*k;                     // さらに前へ被さる(リリース時点の前傾から連続)
     pitcher.group.rotation.y = side*(0.2 + 0.22*k);       // 開いた体がもう一段回る
     if(pitcher.plantLeg) pitcher.plantLeg.rotation.x = -0.22*k; // 踏み込み足の膝が沈む
@@ -1162,7 +1187,7 @@ try{
   } else {
     const restSide = current ? (current.hand==="R"?-1:1) : -1;
     pitcher.throwArm.shoulder.rotation.z += ((restSide*2.6) - pitcher.throwArm.shoulder.rotation.z)*0.08;
-    pitcher.restArm.shoulder.rotation.z += ((restSide*2.7) - pitcher.restArm.shoulder.rotation.z)*0.08;
+    pitcher.restArm.shoulder.rotation.z += ((restSide*0.3) - pitcher.restArm.shoulder.rotation.z)*0.08;
     pitcher.throwArm.elbow.rotation.x *= 0.9;
     pitcher.group.rotation.x *= 0.9;
     pitcher.group.rotation.y *= 0.9;
