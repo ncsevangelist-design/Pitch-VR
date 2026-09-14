@@ -515,14 +515,36 @@ function easeOutCubic(x){ return 1-Math.pow(1-x,3); }
 function easeInQuad(x){ return x*x; }
 function easeInCubic(x){ return x*x*x; }
 
+// 生地の質感を出すための、ごく淡いシワ・織り目ノイズを乗せたキャンバステクスチャ
+function makeFabricTexture(hex){
+  const c = document.createElement("canvas"); c.width=128; c.height=128;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = hex; ctx.fillRect(0,0,128,128);
+  for(let i=0;i<46;i++){
+    const x=Math.random()*128, y=Math.random()*128, w=1+Math.random()*2, h=6+Math.random()*22;
+    ctx.fillStyle = `rgba(0,0,0,${0.02+Math.random()*0.05})`;
+    ctx.fillRect(x,y,w,h);
+  }
+  for(let i=0;i<14;i++){
+    const x=Math.random()*128, y=Math.random()*128;
+    ctx.fillStyle = `rgba(255,255,255,${0.03+Math.random()*0.04})`;
+    ctx.fillRect(x,y,2+Math.random()*3,4+Math.random()*14);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2,2);
+  return tex;
+}
+
 function buildPitcher(){
   const g = new THREE.Group();
-  const bodyMat = new THREE.MeshLambertMaterial({color:0xe7e7ea});
+  const bodyMat = new THREE.MeshLambertMaterial({color:0xe7e7ea, map:makeFabricTexture("#e7e7ea")});
   const trimMat = new THREE.MeshLambertMaterial({color:0x1b3350});
-  const pantsMat = new THREE.MeshLambertMaterial({color:0xf2ede1});
+  const pantsMat = new THREE.MeshLambertMaterial({color:0xf2ede1, map:makeFabricTexture("#f2ede1")});
   const skinMat = new THREE.MeshLambertMaterial({color:0xe0b090});
   const capMat = new THREE.MeshLambertMaterial({color:0x1b3350});
   const gloveMat = new THREE.MeshLambertMaterial({color:0x6b3a22});
+  const creaseMat = new THREE.MeshBasicMaterial({color:0x000000, transparent:true, opacity:0.16});
 
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46,0.62,0.28), bodyMat);
   torso.position.y = 1.05;
@@ -532,6 +554,9 @@ function buildPitcher(){
   chestStripe.position.y = 0.86; g.add(chestStripe);
   const collar = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.05,0.29), trimMat);
   collar.position.y = 1.35; g.add(collar);
+  // ベルト(胴と腰の境目に締まりを出す)
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.43,0.045,0.27), trimMat);
+  belt.position.y = 0.735; g.add(belt);
 
   const hips = new THREE.Mesh(new THREE.BoxGeometry(0.42,0.22,0.26), pantsMat);
   hips.position.y = 0.72;
@@ -544,6 +569,10 @@ function buildPitcher(){
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.62,0.18), pantsMat);
     leg.position.y = -0.31;
     pivot.add(leg);
+    // 膝のシワ(実際に曲がるわけではないが、関節の位置を示す陰影)
+    const kneeCrease = new THREE.Mesh(new THREE.BoxGeometry(0.165,0.02,0.02), creaseMat);
+    kneeCrease.position.set(0,-0.52,0.091);
+    pivot.add(kneeCrease);
     const foot = new THREE.Mesh(new THREE.BoxGeometry(0.17,0.07,0.27), pantsMat);
     foot.position.set(0,-0.65,0.06);
     pivot.add(foot);
@@ -566,11 +595,19 @@ function buildPitcher(){
     const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.055,0.34,10), bodyMat);
     upper.position.y = -0.17;
     shoulder.add(upper);
+    // 半袖の袖口(トリムカラーの帯)
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.062,0.035,10), trimMat);
+    cuff.position.y = -0.32;
+    shoulder.add(cuff);
     const elbow = new THREE.Group();
     elbow.position.y = -0.34;
     const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.045,0.32,10), skinMat);
     lower.position.y = -0.16;
     elbow.add(lower);
+    // 肘の関節を示す陰影
+    const elbowCrease = new THREE.Mesh(new THREE.TorusGeometry(0.048,0.006,6,12), creaseMat);
+    elbowCrease.rotation.x = Math.PI/2;
+    elbow.add(elbowCrease);
     shoulder.add(elbow);
     return {shoulder, elbow};
   }
@@ -696,8 +733,10 @@ let current = null;
 let phaseT = 0;
 const WINDUP_TIME = 1.35;
 const WINDUP_PREP = 0.20; // 最初に両手を合わせて振りかぶる「タメ」の割合
+const FOLLOW_TIME = 0.38; // リリース後、腕を振り抜くフォロースルーの長さ
 let hitRegistered = false;
 let lastHitInfo = null;
+let pitcherFollowT = -1; // -1:フォロースルー中でない / 0〜FOLLOW_TIME:進行中
 
 function startThrow(){
   if(phase!=="idle") return;
@@ -705,6 +744,7 @@ function startThrow(){
   layoutPitcher(current.hand);
   phase = "windup";
   phaseT = 0;
+  pitcherFollowT = -1;
   hitRegistered = false;
   ballGroup.visible = false;
   resetTrail();
@@ -717,6 +757,7 @@ function startThrow(){
 }
 
 function releaseBall(){
+  pitcherFollowT = 0;
   ballGroup.visible = true;
   ballGroup.position.copy(current.R);
   drawBoard(current.def.name, current.speedKmh, null, false);
@@ -1070,15 +1111,24 @@ try{
       if(pitcher.plantLeg) pitcher.plantLeg.rotation.x = kickAngle*0.08;
 
       // 投球腕:振りかぶり位置(HANDS_UP)→高く振り上げて溜め(COCK)→一気に振り抜く(RELEASE)
+      // 肘は肩と同じタイミングでは動かさない(そうするとバッティングセンターのマシンのような
+      // 一本棒の回転に見えてしまう)。実際の投球は「肘から先に曲げてタメを作り、腕を体の前まで
+      // 運んでから、最後の瞬間に肘だけが一気に伸びる」というキネティックチェーンになっている。
+      const ELBOW_MAX = -1.15;
       let armAngle, elbowAngle;
       if(t < 0.45){
         const k = easeOutCubic(t/0.45);
-        armAngle = HANDS_UP + (COCK-HANDS_UP)*k; elbowAngle = -0.3*k;
+        armAngle = HANDS_UP + (COCK-HANDS_UP)*k;
+        elbowAngle = ELBOW_MAX*easeOutCubic(Math.min(k*1.8,1)); // 肘は肩より先に曲げ切る
       } else if(t < 0.6){
-        armAngle = COCK; elbowAngle = -0.9;
+        armAngle = COCK; elbowAngle = ELBOW_MAX; // 肘を曲げたまま「タメ」を保持
       } else {
         const k = easeInCubic((t-0.6)/0.4);
-        armAngle = COCK + (RELEASE-COCK)*k; elbowAngle = -0.9 + 0.9*k;
+        armAngle = COCK + (RELEASE-COCK)*k;
+        // 肩が振り出されている間、肘は曲げたまま我慢し(k<0.68)、リリース直前の
+        // わずかな時間で一気に伸びる(ムチのような加速)
+        const whip = k < 0.68 ? 0 : easeInQuad((k-0.68)/0.32);
+        elbowAngle = ELBOW_MAX*(1-whip);
       }
       pitcher.throwArm.shoulder.rotation.z = armAngle;
       pitcher.throwArm.elbow.rotation.x = elbowAngle;
@@ -1095,15 +1145,29 @@ try{
     }
 
     if(tRaw>=1){ releaseBall(); }
+  } else if(pitcherFollowT >= 0){
+    // リリース後のフォロースルー:腕を振り抜き、軸足(踏み込み足)の膝が沈み、上体がさらに前へ被さる
+    pitcherFollowT += dt;
+    const k = easeOutCubic(Math.min(pitcherFollowT/FOLLOW_TIME, 1));
+    const side = current.hand==="R" ? -1 : 1;
+    const RELEASE = side*-3.7, FOLLOW = side*-4.5;
+    pitcher.throwArm.shoulder.rotation.z = RELEASE + (FOLLOW-RELEASE)*k;
+    pitcher.throwArm.elbow.rotation.x = 0.55*k;           // 振り抜きで肘が軽く曲がる
+    pitcher.restArm.shoulder.rotation.z = side*2.7 - 0.5*k;
+    pitcher.group.rotation.x = 0.4*k;                     // さらに前へ被さる(リリース時点の前傾から連続)
+    pitcher.group.rotation.y = side*(0.2 + 0.22*k);       // 開いた体がもう一段回る
+    if(pitcher.plantLeg) pitcher.plantLeg.rotation.x = -0.22*k; // 踏み込み足の膝が沈む
+    if(pitcher.kickLeg)  pitcher.kickLeg.rotation.x = 0.10*k;   // 蹴り足が後方へ浮く
+    if(pitcherFollowT >= FOLLOW_TIME) pitcherFollowT = -1;
   } else {
     const restSide = current ? (current.hand==="R"?-1:1) : -1;
     pitcher.throwArm.shoulder.rotation.z += ((restSide*2.6) - pitcher.throwArm.shoulder.rotation.z)*0.08;
     pitcher.restArm.shoulder.rotation.z += ((restSide*2.7) - pitcher.restArm.shoulder.rotation.z)*0.08;
-    pitcher.throwArm.elbow.rotation.x *= 0.85;
-    pitcher.group.rotation.x *= 0.85;
-    pitcher.group.rotation.y *= 0.85;
-    if(pitcher.kickLeg) pitcher.kickLeg.rotation.x *= 0.85;
-    if(pitcher.plantLeg) pitcher.plantLeg.rotation.x *= 0.85;
+    pitcher.throwArm.elbow.rotation.x *= 0.9;
+    pitcher.group.rotation.x *= 0.9;
+    pitcher.group.rotation.y *= 0.9;
+    if(pitcher.kickLeg) pitcher.kickLeg.rotation.x *= 0.9;
+    if(pitcher.plantLeg) pitcher.plantLeg.rotation.x *= 0.9;
   }
 
   // 飛翔中のボール
