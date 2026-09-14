@@ -164,7 +164,6 @@
       <div class="seg" id="segPitcher">
         <button data-v="R" class="on">右投げ</button>
         <button data-v="L">左投げ</button>
-        <button data-v="RANDOM">ランダム</button>
       </div>
     </div>
 
@@ -235,7 +234,7 @@ const PITCH_TYPES = {
   change:  { key:"change",   name:"チェンジアップ",   short:"チェンジ", speed:[118,129], g:11.0, ah:0.9,  side:"arm"  },
   curve:   { key:"curve",    name:"カーブ",           short:"カーブ", speed:[107,124], g:15.5, ah:2.7,  side:"glove"},
   shuuto:  { key:"shuuto",   name:"シュート",         short:"シュート", speed:[132,143], g:8.2,  ah:3.6,  side:"arm"  },
-  fork:    { key:"fork",     name:"フォーク",         short:"フォーク", speed:[126,137], g:13.8, ah:0.45, side:"arm"  },
+  fork:    { key:"fork",     name:"フォーク",         short:"フォーク", speed:[126,137], g:19.5, ah:0.3,  side:"arm"  },
   slider:  { key:"slider",   name:"スライダー",       short:"スライダー", speed:[128,141], g:10.2, ah:4.0,  side:"glove"},
 };
 const PITCH_ORDER = ["fastball","change","curve","shuuto","fork","slider"];
@@ -246,7 +245,7 @@ const PLATE_Z   = 0;
 const G_CONST   = 9.8;
 
 const state = {
-  pitcherHand:"R",   // "R" | "L" | "RANDOM"
+  pitcherHand:"R",   // "R" | "L"
   batterHand:"R",    // "R" | "L"
   mode:"watch",      // "watch" | "bat"
   dominant:"R",      // バットを持つ手
@@ -291,7 +290,7 @@ wireSeg("segMode",    v=>{
 });
 wireSeg("segDominant",v=>{ state.dominant=v; syncFlatSettingsText(); });
 
-function handLabel(h){ return h==="R"?"右":(h==="L"?"左":"ランダム"); }
+function handLabel(h){ return h==="R"?"右":"左"; }
 function syncFlatSettingsText(){
   document.getElementById("flatSettings").innerHTML =
     "投手:<b>"+handLabel(state.pitcherHand)+"</b>&nbsp; 打者:<b>"+handLabel(state.batterHand)+"</b>&nbsp; "+
@@ -591,7 +590,7 @@ function buildPitcher(){
   return {group:g, throwArm, restArm, legLeft, legRight};
 }
 const pitcher = buildPitcher();
-pitcher.group.scale.setScalar(1.55); // 実際に打席に立った時の見え方に合わせて大きめに表示
+pitcher.group.scale.setScalar(1.8); // 実際に打席に立った時の見え方に合わせて大きめに表示
 scene.add(pitcher.group);
 
 function layoutPitcher(hand){
@@ -629,7 +628,6 @@ function makeBat(){
    投球パラメータ計算
    ============================================================ */
 function pickPitcherHand(){
-  if(state.pitcherHand==="RANDOM") return Math.random()<0.5 ? "R":"L";
   return state.pitcherHand;
 }
 function pickPitchKey(){
@@ -639,6 +637,23 @@ function pickPitchKey(){
 }
 function rand(a,b){ return a + Math.random()*(b-a); }
 
+// 実際のリリース位置(投球腕の手先)をピッチャーの人形のジオメトリから直接計算する。
+// ピッチャーの大きさやポーズを調整しても、ボールが常に「手から出ている」ように見える。
+const _handTipLocal = new THREE.Vector3(0, -0.32, 0);
+const _releaseWorld = new THREE.Vector3();
+function getReleaseWorldPoint(hand){
+  layoutPitcher(hand);
+  const side = hand==="R" ? -1 : 1;
+  pitcher.group.rotation.set(0, side*0.2, 0);
+  pitcher.throwArm.shoulder.rotation.set(0, 0, side*-3.7); // ワインドアップのRELEASE角と一致させる
+  pitcher.throwArm.elbow.rotation.x = 0;
+  pitcher.group.updateMatrixWorld(true);
+  pitcher.throwArm.elbow.localToWorld(_releaseWorld.copy(_handTipLocal));
+  const out = _releaseWorld.clone();
+  layoutPitcher(hand); // アイドル姿勢に戻す
+  return out;
+}
+
 function computePitch(){
   const hand = pickPitcherHand();
   const key = pickPitchKey();
@@ -646,10 +661,11 @@ function computePitch(){
   const speedKmh = Math.round(rand(def.speed[0], def.speed[1]));
   const speedMs = speedKmh/3.6;
 
+  const relPoint = getReleaseWorldPoint(hand);
   const R = new THREE.Vector3(
-    (hand==="R"?-0.55:0.55) + rand(-0.05,0.05),
-    1.82 + rand(-0.05,0.05),
-    RELEASE_Z
+    relPoint.x + rand(-0.04,0.04),
+    relPoint.y + rand(-0.04,0.04),
+    relPoint.z
   );
   const T = new THREE.Vector3(
     rand(-0.06,0.06) + (state.batterHand==="R"? -0.02:0.02),
@@ -804,7 +820,7 @@ function drawMenu(){
 
   menuButtons = [];
   let y = 52;
-  y = row(c,"投手", [["R","右投げ"],["L","左投げ"],["RANDOM","ランダム"]], state.pitcherHand, "pitcher", y);
+  y = row(c,"投手", [["R","右投げ"],["L","左投げ"]], state.pitcherHand, "pitcher", y);
   y = row(c,"打者", [["R","右打者"],["L","左打者"]], state.batterHand, "batter", y);
   y = row(c,"モード", [["watch","見るだけ"],["bat","バッティング"]], state.mode, "mode", y);
   if(state.mode==="bat"){
@@ -852,7 +868,7 @@ function row(c, label, opts, current, group, y){
     c.fillText(l, x+w/2, y+18);
     menuButtons.push({x,y,w,h:28, action:()=>{
       if(group==="pitcher") state.pitcherHand=v;
-      if(group==="batter"){ state.batterHand=v; updateBatterStance(); }
+      if(group==="batter"){ state.batterHand=v; updateBatterStance(); updateBatVisual(); }
       if(group==="mode"){ state.mode=v; if(v!=="bat") detachBat(); else attachBatIfNeeded(); }
       if(group==="dominant"){ state.dominant=v; detachBat(); attachBatIfNeeded(); }
       drawMenu();
@@ -959,7 +975,8 @@ enterVrBtn.addEventListener("click", async ()=>{
     document.getElementById("overlay").style.display="none";
     document.getElementById("flatHud").classList.remove("show");
     updateBatterStance();
-    layoutPitcher(state.pitcherHand==="RANDOM"?"R":state.pitcherHand);
+    updateBatVisual();
+    layoutPitcher(state.pitcherHand);
     phase="idle";
   }catch(err){
     vrNote.textContent = "エラー: VRセッションを開始できませんでした → " + (err && err.message ? err.message : String(err));
@@ -972,7 +989,8 @@ document.getElementById("enterFlat").addEventListener("click", ()=>{
   document.getElementById("overlay").style.display="none";
   flatHud.classList.add("show");
   updateBatterStance();
-  layoutPitcher(state.pitcherHand==="RANDOM"?"R":state.pitcherHand);
+  updateBatVisual();
+  layoutPitcher(state.pitcherHand);
   phase="idle";
 });
 document.getElementById("exitFlat").addEventListener("click", ()=>{
@@ -985,8 +1003,13 @@ document.getElementById("throwBtn").addEventListener("click", startThrow);
 const flatBat = makeBat();
 flatBat.visible = false;
 camera.add(flatBat);
-flatBat.position.set(0.28,-0.35,-0.55);
-flatBat.rotation.z = 1.4;
+let batSide = 1; // 右打者:1(自分から見て右) / 左打者:-1(自分から見て左)
+function updateBatVisual(){
+  batSide = state.batterHand==="R" ? 1 : -1;
+  flatBat.position.set(0.28*batSide, -0.35, -0.55);
+  flatBat.rotation.z = 1.4*batSide;
+}
+updateBatVisual();
 let flatSwingT = -1;
 document.getElementById("swingBtn").addEventListener("click", ()=>{
   if(phase!=="flight" || hitRegistered) return;
@@ -1140,7 +1163,7 @@ try{
   if(flatSwingT>=0){
     flatSwingT += dt;
     const t = Math.min(flatSwingT/0.28,1);
-    flatBat.rotation.y = -1.3 + t*2.2;
+    flatBat.rotation.y = batSide*(-1.3 + t*2.2);
     if(t>=1) flatSwingT=-1;
   } else {
     flatBat.rotation.y += (0 - flatBat.rotation.y)*0.2;
