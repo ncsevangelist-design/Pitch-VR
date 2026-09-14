@@ -329,7 +329,7 @@ dolly.add(camera);
 scene.add(dolly);
 
 function updateBatterStance(){
-  const xOff = state.batterHand==="R" ? 0.34 : -0.34;
+  const xOff = state.batterHand==="R" ? -0.34 : 0.34;
   dolly.position.set(xOff, 0, 0.35);
 }
 updateBatterStance();
