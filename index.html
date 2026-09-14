@@ -329,8 +329,7 @@ dolly.add(camera);
 scene.add(dolly);
 
 function updateBatterStance(){
-  // 右打者は三塁側(-x)、左打者は一塁側(+x)の打席に立つ
-  const xOff = state.batterHand==="R" ? -0.34 : 0.34;
+  const xOff = state.batterHand==="R" ? 0.34 : -0.34;
   dolly.position.set(xOff, 0, 0.35);
 }
 updateBatterStance();
@@ -520,13 +519,20 @@ function easeInCubic(x){ return x*x*x; }
 function buildPitcher(){
   const g = new THREE.Group();
   const bodyMat = new THREE.MeshLambertMaterial({color:0xe7e7ea});
-  const pantsMat = new THREE.MeshLambertMaterial({color:0x1b3350});
+  const trimMat = new THREE.MeshLambertMaterial({color:0x1b3350});
+  const pantsMat = new THREE.MeshLambertMaterial({color:0xf2ede1});
   const skinMat = new THREE.MeshLambertMaterial({color:0xe0b090});
   const capMat = new THREE.MeshLambertMaterial({color:0x1b3350});
+  const gloveMat = new THREE.MeshLambertMaterial({color:0x6b3a22});
 
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46,0.62,0.28), bodyMat);
   torso.position.y = 1.05;
   g.add(torso);
+  // 胸元と袖のチームカラーのライン(実在チームを模したものではない、汎用の配色)
+  const chestStripe = new THREE.Mesh(new THREE.BoxGeometry(0.47,0.07,0.29), trimMat);
+  chestStripe.position.y = 0.86; g.add(chestStripe);
+  const collar = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.05,0.29), trimMat);
+  collar.position.y = 1.35; g.add(collar);
 
   const hips = new THREE.Mesh(new THREE.BoxGeometry(0.42,0.22,0.26), pantsMat);
   hips.position.y = 0.72;
@@ -552,6 +558,8 @@ function buildPitcher(){
   head.position.y = 1.5; g.add(head);
   const cap = new THREE.Mesh(new THREE.SphereGeometry(0.16,16,10,0,Math.PI*2,0,Math.PI/2), capMat);
   cap.position.y = 1.55; g.add(cap);
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,0.02,16,1,false,0,Math.PI), capMat);
+  brim.rotation.x = Math.PI/2; brim.position.set(0,1.51,0.13); g.add(brim);
 
   // 腕(肩ピボット -> グループ)
   function makeArm(){
@@ -574,10 +582,16 @@ function buildPitcher(){
   g.add(throwArm.shoulder, restArm.shoulder);
   restArm.shoulder.rotation.z = 2.7; // 体側に下ろす(グラブ側は動かさない)
 
+  // グラブ(投球腕と反対側の手)
+  const glove = new THREE.Mesh(new THREE.SphereGeometry(0.075,10,10), gloveMat);
+  glove.scale.set(1,0.85,0.6);
+  glove.position.y = -0.34;
+  restArm.elbow.add(glove);
+
   return {group:g, throwArm, restArm, legLeft, legRight};
 }
 const pitcher = buildPitcher();
-pitcher.group.scale.setScalar(1.32); // 実物より一回り大きく見せて視認性を確保
+pitcher.group.scale.setScalar(1.55); // 実際に打席に立った時の見え方に合わせて大きめに表示
 scene.add(pitcher.group);
 
 function layoutPitcher(hand){
@@ -664,7 +678,8 @@ let clock = new THREE.Clock();
 let phase = "idle"; // idle | windup | flight | result
 let current = null;
 let phaseT = 0;
-const WINDUP_TIME = 1.15;
+const WINDUP_TIME = 1.35;
+const WINDUP_PREP = 0.20; // 最初に両手を合わせて振りかぶる「タメ」の割合
 let hitRegistered = false;
 let lastHitInfo = null;
 
@@ -1006,45 +1021,61 @@ try{
     if(state.mode==="bat" && !vrBat) attachBatIfNeeded();
   }
 
-  // 投手ワインドアップ(足を上げて溜め → 体を開きながら腕を振り抜く)
+  // 投手ワインドアップ(両手を合わせて振りかぶる → 足を上げて溜め → 体を開きながら腕を振り抜く)
   if(phase==="windup"){
     phaseT += dt;
-    const t = Math.min(phaseT/WINDUP_TIME, 1);
+    const tRaw = Math.min(phaseT/WINDUP_TIME, 1);
     const side = current.hand==="R" ? -1 : 1;
+    const REST = side*2.6, HANDS_UP = side*-0.35, COCK = side*-1.15, RELEASE = side*-3.7;
 
-    // 足上げ(0〜0.42) → 一瞬の溜め(0.42〜0.58) → 踏み込み(0.58〜1.0)
-    let kickAngle;
-    if(t < 0.42){ kickAngle = -1.05*easeOutCubic(t/0.42); }
-    else if(t < 0.58){ kickAngle = -1.05; }
-    else { kickAngle = -1.05*(1-easeInQuad((t-0.58)/0.42)); }
-    if(pitcher.kickLeg) pitcher.kickLeg.rotation.x = kickAngle;
-    if(pitcher.plantLeg) pitcher.plantLeg.rotation.x = kickAngle*0.08;
-
-    // 腕:下げ(REST)→高く振り上げて溜め(COCK)→一気に振り抜く(RELEASE)
-    const REST = side*2.6, COCK = side*-1.15, RELEASE = side*-3.7;
-    let armAngle, elbowAngle;
-    if(t < 0.45){
-      const k = easeOutCubic(t/0.45);
-      armAngle = REST + (COCK-REST)*k; elbowAngle = -0.3*k;
-    } else if(t < 0.6){
-      armAngle = COCK; elbowAngle = -0.9;
+    if(tRaw < WINDUP_PREP){
+      // 振りかぶり:両手を体の前で合わせながら一緒に振り上げる(ダイナミックな始動)
+      const k = easeOutCubic(tRaw/WINDUP_PREP);
+      pitcher.throwArm.shoulder.rotation.z = REST + (HANDS_UP-REST)*k;
+      pitcher.restArm.shoulder.rotation.z = side*2.7 + (HANDS_UP-side*2.7)*k;
+      pitcher.throwArm.elbow.rotation.x = 0;
+      pitcher.group.rotation.x = -0.08*k;
     } else {
-      const k = easeInCubic((t-0.6)/0.4);
-      armAngle = COCK + (RELEASE-COCK)*k; elbowAngle = -0.9 + 0.9*k;
+      const t = (tRaw - WINDUP_PREP)/(1 - WINDUP_PREP);
+
+      // 足上げ(0〜0.42) → 一瞬の溜め(0.42〜0.58) → 踏み込み(0.58〜1.0)
+      let kickAngle;
+      if(t < 0.42){ kickAngle = -1.05*easeOutCubic(t/0.42); }
+      else if(t < 0.58){ kickAngle = -1.05; }
+      else { kickAngle = -1.05*(1-easeInQuad((t-0.58)/0.42)); }
+      if(pitcher.kickLeg) pitcher.kickLeg.rotation.x = kickAngle;
+      if(pitcher.plantLeg) pitcher.plantLeg.rotation.x = kickAngle*0.08;
+
+      // 投球腕:振りかぶり位置(HANDS_UP)→高く振り上げて溜め(COCK)→一気に振り抜く(RELEASE)
+      let armAngle, elbowAngle;
+      if(t < 0.45){
+        const k = easeOutCubic(t/0.45);
+        armAngle = HANDS_UP + (COCK-HANDS_UP)*k; elbowAngle = -0.3*k;
+      } else if(t < 0.6){
+        armAngle = COCK; elbowAngle = -0.9;
+      } else {
+        const k = easeInCubic((t-0.6)/0.4);
+        armAngle = COCK + (RELEASE-COCK)*k; elbowAngle = -0.9 + 0.9*k;
+      }
+      pitcher.throwArm.shoulder.rotation.z = armAngle;
+      pitcher.throwArm.elbow.rotation.x = elbowAngle;
+
+      // グラブ側の腕は振りかぶり位置から自然に体側へ戻す
+      const gloveBack = Math.min(t/0.3, 1);
+      pitcher.restArm.shoulder.rotation.z = HANDS_UP + (side*2.7 - HANDS_UP)*easeOutCubic(gloveBack);
+
+      // 体の開き(タメて一気に開放)+前傾
+      const tuck = t<0.58 ? Math.min(t/0.42,1) : 1-easeInQuad((t-0.58)/0.42);
+      const openUp = t<0.58 ? 0 : easeInQuad((t-0.58)/0.42);
+      pitcher.group.rotation.y = side*(-0.42*tuck + 0.2*openUp);
+      pitcher.group.rotation.x = 0.22*Math.sin(t*Math.PI);
     }
-    pitcher.throwArm.shoulder.rotation.z = armAngle;
-    pitcher.throwArm.elbow.rotation.x = elbowAngle;
 
-    // 体の開き(タメて一気に開放)+前傾
-    const tuck = t<0.58 ? Math.min(t/0.42,1) : 1-easeInQuad((t-0.58)/0.42);
-    const openUp = t<0.58 ? 0 : easeInQuad((t-0.58)/0.42);
-    pitcher.group.rotation.y = side*(-0.42*tuck + 0.2*openUp);
-    pitcher.group.rotation.x = 0.22*Math.sin(t*Math.PI);
-
-    if(t>=1){ releaseBall(); }
+    if(tRaw>=1){ releaseBall(); }
   } else {
     const restSide = current ? (current.hand==="R"?-1:1) : -1;
     pitcher.throwArm.shoulder.rotation.z += ((restSide*2.6) - pitcher.throwArm.shoulder.rotation.z)*0.08;
+    pitcher.restArm.shoulder.rotation.z += ((restSide*2.7) - pitcher.restArm.shoulder.rotation.z)*0.08;
     pitcher.throwArm.elbow.rotation.x *= 0.85;
     pitcher.group.rotation.x *= 0.85;
     pitcher.group.rotation.y *= 0.85;
