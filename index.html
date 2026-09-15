@@ -128,6 +128,9 @@
     padding:8px 22px;text-align:center;min-width:220px;pointer-events:none;
   }
   #board .btype{font-size:15px;color:var(--chalk);font-weight:700;letter-spacing:.02em;}
+  #board .bcall{font-size:13px;font-weight:700;letter-spacing:.1em;margin-top:3px;min-height:16px;color:var(--chalk-dim);}
+  #board .bcall.strike{color:#5fd07a;}
+  #board .bcall.ball{color:#7ec8f2;}
   #board .bspeed{font-family:"Oswald",sans-serif;font-size:30px;font-weight:700;color:var(--amber);line-height:1.1;}
   #board .bspeed span{font-size:13px;color:var(--chalk-dim);font-weight:400;margin-left:4px;}
   #board .bresult{font-size:14px;font-weight:700;color:var(--red);min-height:18px;margin-top:2px;}
@@ -183,6 +186,14 @@
       </div>
     </div>
 
+    <div class="group">
+      <div class="group-label">ストライクゾーン表示</div>
+      <div class="seg" id="segZone">
+        <button data-v="on" class="on">表示</button>
+        <button data-v="off">非表示</button>
+      </div>
+    </div>
+
     <div class="group" id="dominantRow">
       <div class="group-label">バットを持つ手</div>
       <div class="seg" id="segDominant">
@@ -207,6 +218,7 @@
 <div id="flatHud">
   <div id="board">
     <div class="btype" id="bType">投球を待っています</div>
+    <div class="bcall" id="bCall"></div>
     <div class="bspeed" id="bSpeed">--<span>km/h</span></div>
     <div class="bresult" id="bResult"></div>
   </div>
@@ -232,10 +244,10 @@
 const PITCH_TYPES = {
   fastball:{ key:"fastball", name:"速球(ストレート)", short:"直球", speed:[144,153], g:7.0,  ah:0.55, side:"arm"  },
   change:  { key:"change",   name:"チェンジアップ",   short:"チェンジ", speed:[118,129], g:11.0, ah:0.9,  side:"arm"  },
-  curve:   { key:"curve",    name:"カーブ",           short:"カーブ", speed:[107,124], g:15.5, ah:2.7,  side:"glove"},
+  curve:   { key:"curve",    name:"カーブ",           short:"カーブ", speed:[107,124], g:20.0, ah:1.3,  side:"glove"},
   shuuto:  { key:"shuuto",   name:"シュート",         short:"シュート", speed:[132,143], g:8.2,  ah:3.6,  side:"arm"  },
   fork:    { key:"fork",     name:"フォーク",         short:"フォーク", speed:[126,137], g:19.5, ah:0.3,  side:"arm"  },
-  slider:  { key:"slider",   name:"スライダー",       short:"スライダー", speed:[128,141], g:10.2, ah:4.0,  side:"glove"},
+  slider:  { key:"slider",   name:"スライダー",       short:"スライダー", speed:[128,141], g:8.5,  ah:4.6,  side:"glove"},
 };
 const PITCH_ORDER = ["fastball","change","curve","shuuto","fork","slider"];
 
@@ -244,11 +256,17 @@ const MOUND_Z   = -15.3;
 const PLATE_Z   = 0;
 const G_CONST   = 9.8;
 
+// ストライクゾーン(9分割ガイド表示 & ストライク/ボール判定の両方で共有する基準値)
+const ZONE_X_HALF = 0.215; // ホームベース幅の半分に合わせた目安
+const ZONE_Y_BOT  = 0.55;  // 低め基準(ひざ元)
+const ZONE_Y_TOP  = 1.15;  // 高め基準(胸元)
+
 const state = {
   pitcherHand:"R",   // "R" | "L"
   batterHand:"R",    // "R" | "L"
   mode:"watch",      // "watch" | "bat"
   dominant:"R",      // バットを持つ手
+  showZone:true,     // ストライクゾーンの9分割ガイドをホームベース上に表示するか
   enabled:{fastball:true,change:true,curve:true,shuuto:true,fork:true,slider:true},
 };
 
@@ -289,6 +307,11 @@ wireSeg("segMode",    v=>{
   syncFlatSettingsText();
 });
 wireSeg("segDominant",v=>{ state.dominant=v; syncFlatSettingsText(); });
+wireSeg("segZone",    v=>{
+  state.showZone = v==="on";
+  zoneGroup.visible = state.showZone; // zoneGroupはこのIIFE内で後ほど生成されるが、クリックは読み込み完了後にしか発生しないため参照可能
+  if(menuBuilt) drawMenu();
+});
 
 function handLabel(h){ return h==="R"?"右":"左"; }
 function syncFlatSettingsText(){
@@ -411,6 +434,47 @@ function batterBoxLines(xSign){
 scene.add(batterBoxLines(1));
 scene.add(batterBoxLines(-1));
 
+/* ---------------- ストライクゾーン(9分割・薄い点線ガイド。ON/OFF切替可能) ---------------- */
+const zoneGroup = new THREE.Group();
+{
+  const pts = [], dist = [];
+  // THREE.Line.computeLineDistances()は全頂点を1本の連続パスとして累積距離を計算してしまうため、
+  // LineSegments(複数の独立した線分)に使うと線分ごとの点線位相がずれてしまう。
+  // ここではセグメントごとにlineDistanceを0からリセットして自前で設定し、点線を揃える。
+  const seg = (x1,y1,x2,y2)=>{
+    pts.push(x1,y1,0, x2,y2,0);
+    dist.push(0, Math.hypot(x2-x1, y2-y1));
+  };
+  // 外枠
+  seg(-ZONE_X_HALF, ZONE_Y_BOT,  ZONE_X_HALF, ZONE_Y_BOT);
+  seg( ZONE_X_HALF, ZONE_Y_BOT,  ZONE_X_HALF, ZONE_Y_TOP);
+  seg( ZONE_X_HALF, ZONE_Y_TOP, -ZONE_X_HALF, ZONE_Y_TOP);
+  seg(-ZONE_X_HALF, ZONE_Y_TOP, -ZONE_X_HALF, ZONE_Y_BOT);
+  // 縦の仕切り(3等分→内側2本)
+  const xw = (ZONE_X_HALF*2)/3;
+  for(let i=1;i<3;i++){
+    const x = -ZONE_X_HALF + xw*i;
+    seg(x, ZONE_Y_BOT, x, ZONE_Y_TOP);
+  }
+  // 横の仕切り(3等分→内側2本)
+  const yh = (ZONE_Y_TOP-ZONE_Y_BOT)/3;
+  for(let i=1;i<3;i++){
+    const y = ZONE_Y_BOT + yh*i;
+    seg(-ZONE_X_HALF, y, ZONE_X_HALF, y);
+  }
+  const zoneGeo = new THREE.BufferGeometry();
+  zoneGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+  zoneGeo.setAttribute("lineDistance", new THREE.Float32BufferAttribute(dist, 1));
+  const zoneMat = new THREE.LineDashedMaterial({
+    color:0xffffff, dashSize:0.035, gapSize:0.03, transparent:true, opacity:0.5
+  });
+  const zoneLines = new THREE.LineSegments(zoneGeo, zoneMat);
+  zoneGroup.add(zoneLines);
+}
+zoneGroup.position.set(0, 0, PLATE_Z + 0.015); // ホームベースよりわずかに手前に出して埋没しないようにする
+zoneGroup.visible = state.showZone;
+scene.add(zoneGroup);
+
 // 外野フェンス(円弧)+ スタンド代わりのブロック
 const fenceGroup = new THREE.Group();
 const fenceMat = new THREE.MeshLambertMaterial({color:0x1f4a2c});
@@ -445,7 +509,7 @@ const boardPost = new THREE.Mesh(new THREE.BoxGeometry(0.5,8.2,0.5), standMat);
 boardPost.position.set(0, 4.1, -34);
 scene.add(boardPost);
 
-function drawBoard(typeName, speedKmh, resultText, resultGood){
+function drawBoard(typeName, speedKmh, resultText, resultGood, callText, callIsStrike){
   const c = boardCtx;
   c.fillStyle = "#050a10"; c.fillRect(0,0,1024,512);
   c.strokeStyle = "#8a5d31"; c.lineWidth = 14; c.strokeRect(7,7,1010,498);
@@ -457,6 +521,12 @@ function drawBoard(typeName, speedKmh, resultText, resultGood){
   c.fillText(speedKmh ? String(speedKmh) : "---", 512, 350);
   c.fillStyle = "#7a8598"; c.font="600 30px Oswald, sans-serif"; c.textAlign="left";
   c.fillText("km/h", 660, 350);
+  if(callText){
+    // 投球がゾーンを通過した後の「ストライク/ボール」判定を右上に表示
+    c.fillStyle = callIsStrike ? "#5fd07a" : "#7ec8f2";
+    c.font = "700 42px 'Noto Sans JP', sans-serif"; c.textAlign="right";
+    c.fillText(callText, 1000, 110);
+  }
   if(resultText){
     c.fillStyle = resultGood ? "#5fd07a" : "#e05a4a";
     c.font = "700 48px 'Noto Sans JP', sans-serif"; c.textAlign="center";
@@ -660,7 +730,7 @@ function layoutPitcher(hand){
   const side = hand==="R" ? -1 : 1;
   pitcher.throwArm.shoulder.position.x = side*0.24;
   pitcher.restArm.shoulder.position.x = -side*0.24;
-  pitcher.throwArm.shoulder.rotation.set(0,0, side*2.6);
+  pitcher.throwArm.shoulder.rotation.set(0,0, side*0.4); // 待機姿勢は胸元の低い位置(頭上ではない。5-3参照)
   pitcher.throwArm.elbow.rotation.x = 0;
   pitcher.restArm.shoulder.rotation.set(0,0, side*0.3);
   // 振り上げる足は投球腕と反対側(グラブ側)
@@ -729,7 +799,7 @@ function computePitch(){
   );
   const T = new THREE.Vector3(
     rand(-0.06,0.06) + (state.batterHand==="R"? -0.02:0.02),
-    rand(0.55,1.05),
+    rand(0.42,1.32), // 高め(肩口)〜低め(すね)まで、実際の投手らしく上下に投げ分ける
     PLATE_Z
   );
 
@@ -744,7 +814,11 @@ function computePitch(){
   const vy0 = (T.y - R.y + 0.5*def.g*tTotal*tTotal)/tTotal;
   const vx0 = (T.x - R.x - 0.5*def.ah*sign*tTotal*tTotal)/tTotal;
 
-  return { hand, key, def, speedKmh, R, T, vx0, vy0, vz0, ah:def.ah*sign, g:def.g, tTotal, spinDir: sign };
+  // ボールは変化量に関わらず必ずT(狙った着弾点)を通過するので、Tがゾーン内かどうかで
+  // ストライク/ボールを判定できる(打者が空振り・見逃した場合の「コース」判定として使う)
+  const isStrike = Math.abs(T.x) <= ZONE_X_HALF && T.y >= ZONE_Y_BOT && T.y <= ZONE_Y_TOP;
+
+  return { hand, key, def, speedKmh, R, T, vx0, vy0, vz0, ah:def.ah*sign, g:def.g, tTotal, spinDir: sign, isStrike };
 }
 
 /* ============================================================
@@ -777,6 +851,8 @@ function startThrow(){
   document.getElementById("bSpeed").innerHTML = "--<span>km/h</span>";
   document.getElementById("bResult").textContent = "";
   document.getElementById("bResult").className = "bresult";
+  document.getElementById("bCall").textContent = "";
+  document.getElementById("bCall").className = "bcall";
 }
 
 function releaseBall(){
@@ -793,11 +869,15 @@ function releaseBall(){
 function finishPitch(resultText, good){
   phase = "result";
   phaseT = 0;
+  const callText = current.isStrike ? "ストライク" : "ボール";
   // トレイルは結果表示中も残し、曲がり方を後から確認できるようにする(次の投球開始時にリセット)
-  drawBoard(current.def.name, current.speedKmh, resultText, good);
+  drawBoard(current.def.name, current.speedKmh, resultText, good, callText, current.isStrike);
   const rEl = document.getElementById("bResult");
   rEl.textContent = resultText;
   rEl.className = "bresult" + (good?" good":"");
+  const cEl = document.getElementById("bCall");
+  cEl.textContent = callText;
+  cEl.className = "bcall" + (current.isStrike ? " strike" : " ball");
 }
 
 /* ---------------- バット判定 ---------------- */
@@ -890,6 +970,7 @@ function drawMenu(){
   if(state.mode==="bat"){
     y = row(c,"利き手", [["R","右手"],["L","左手"]], state.dominant, "dominant", y);
   }
+  y = row(c,"ゾーン表示", [["on","表示"],["off","非表示"]], state.showZone?"on":"off", "zone", y);
   // 球種チップ
   c.fillStyle="#a9b3c2"; c.font="600 14px sans-serif"; c.fillText("球種", 20, y+14);
   y += 22;
@@ -935,6 +1016,7 @@ function row(c, label, opts, current, group, y){
       if(group==="batter"){ state.batterHand=v; updateBatterStance(); updateBatVisual(); }
       if(group==="mode"){ state.mode=v; if(v!=="bat") detachBat(); else attachBatIfNeeded(); }
       if(group==="dominant"){ state.dominant=v; detachBat(); attachBatIfNeeded(); }
+      if(group==="zone"){ state.showZone = (v==="on"); zoneGroup.visible = state.showZone; }
       drawMenu();
     }});
     x += w+6;
@@ -1113,7 +1195,7 @@ try{
     phaseT += dt;
     const tRaw = Math.min(phaseT/WINDUP_TIME, 1);
     const side = current.hand==="R" ? -1 : 1;
-    const REST = side*2.6, HANDS_UP = side*-0.35, COCK = side*-1.15, RELEASE = side*-3.7;
+    const REST = side*0.4, HANDS_UP = side*-0.35, COCK = side*-1.15, RELEASE = side*-3.7;
     const GLOVE_LOW = side*0.3, GLOVE_UP = side*1.5; // グラブ側の腕:体側の自然な位置 / 胸元まで合わせる位置
 
     if(tRaw < WINDUP_PREP){
@@ -1157,10 +1239,10 @@ try{
       pitcher.throwArm.shoulder.rotation.z = armAngle;
       pitcher.throwArm.elbow.rotation.x = elbowAngle;
 
-      // グラブ側の腕は、両手が合わさった位置(GLOVE_UP)から素早く腰の高さ(GLOVE_LOW)まで下ろし、
-      // 投球腕が振り抜き終わるまでそこで保持する(上げっぱなしにしない)
-      const gloveDown = Math.min(t/0.3, 1);
-      pitcher.restArm.shoulder.rotation.z = GLOVE_UP + (GLOVE_LOW - GLOVE_UP)*easeOutCubic(gloveDown);
+      // グラブ側の腕は、足上げ〜腕のタメ(コック)の間はGLOVE_UP(胸元)で保持し続け、
+      // 投球腕がCOCKからRELEASEへ振り下ろされる終盤(投げおろす瞬間)に合わせて初めて下ろす
+      const gloveDown = t < 0.7 ? 0 : Math.min((t-0.7)/0.3, 1);
+      pitcher.restArm.shoulder.rotation.z = GLOVE_UP + (GLOVE_LOW - GLOVE_UP)*easeInQuad(gloveDown);
 
       // 体の開き(タメて一気に開放)+前傾
       const tuck = t<0.58 ? Math.min(t/0.42,1) : 1-easeInQuad((t-0.58)/0.42);
@@ -1186,7 +1268,7 @@ try{
     if(pitcherFollowT >= FOLLOW_TIME) pitcherFollowT = -1;
   } else {
     const restSide = current ? (current.hand==="R"?-1:1) : -1;
-    pitcher.throwArm.shoulder.rotation.z += ((restSide*2.6) - pitcher.throwArm.shoulder.rotation.z)*0.08;
+    pitcher.throwArm.shoulder.rotation.z += ((restSide*0.4) - pitcher.throwArm.shoulder.rotation.z)*0.08;
     pitcher.restArm.shoulder.rotation.z += ((restSide*0.3) - pitcher.restArm.shoulder.rotation.z)*0.08;
     pitcher.throwArm.elbow.rotation.x *= 0.9;
     pitcher.group.rotation.x *= 0.9;
