@@ -472,7 +472,11 @@ const zoneGroup = new THREE.Group();
   const zoneLines = new THREE.LineSegments(zoneGeo, zoneMat);
   zoneGroup.add(zoneLines);
 }
-zoneGroup.position.set(0, 0, PLATE_Z + 0.015); // ホームベースよりわずかに手前に出して埋没しないようにする
+// 表示位置はホームベースより少しピッチャー寄り(手前)にずらして見やすくする。
+// ストライク/ボールの判定自体は computePitch() 内でホームベース通過時点(PLATE_Z)のTを使って行っており、
+// この表示位置とは独立しているので、ここを動かしても判定ロジックには影響しない。
+const ZONE_DISPLAY_Z = PLATE_Z - 1.5;
+zoneGroup.position.set(0, 0, ZONE_DISPLAY_Z);
 zoneGroup.visible = state.showZone;
 scene.add(zoneGroup);
 
@@ -504,10 +508,11 @@ const scoreboard = new THREE.Mesh(
   new THREE.PlaneGeometry(11, 5.5),
   new THREE.MeshBasicMaterial({map:boardTex})
 );
-scoreboard.position.set(0, 8.2, -34);
+const SCOREBOARD_X = 7; // ピッチャーの真後ろに重ならないよう横にずらす
+scoreboard.position.set(SCOREBOARD_X, 8.2, -34);
 scene.add(scoreboard);
 const boardPost = new THREE.Mesh(new THREE.BoxGeometry(0.5,8.2,0.5), standMat);
-boardPost.position.set(0, 4.1, -34);
+boardPost.position.set(SCOREBOARD_X, 4.1, -34);
 scene.add(boardPost);
 
 function drawBoard(typeName, speedKmh, resultText, resultGood, callText, callIsStrike){
