@@ -466,7 +466,8 @@ const zoneGroup = new THREE.Group();
   zoneGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
   zoneGeo.setAttribute("lineDistance", new THREE.Float32BufferAttribute(dist, 1));
   const zoneMat = new THREE.LineDashedMaterial({
-    color:0xffffff, dashSize:0.035, gapSize:0.03, transparent:true, opacity:0.5
+    // 白・低opacityだと空/芝の背景に埋もれて見えにくかったため、ブランドのアンバー色・高opacityに変更
+    color:0xffcf6b, dashSize:0.05, gapSize:0.035, transparent:true, opacity:0.9
   });
   const zoneLines = new THREE.LineSegments(zoneGeo, zoneMat);
   zoneGroup.add(zoneLines);
