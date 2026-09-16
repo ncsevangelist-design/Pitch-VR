@@ -90,6 +90,25 @@
   #dominantRow{display:none;}
   #dominantRow.show{display:block;}
 
+  .zoneRandom{
+    width:100%;background:var(--navy-700);border:1px solid rgba(255,255,255,0.08);color:var(--chalk-dim);
+    padding:10px 12px;border-radius:8px;font-size:13.5px;font-weight:500;cursor:pointer;
+    transition:background .15s,color .15s,border-color .15s;
+    font-family:"Noto Sans JP",sans-serif;margin-bottom:8px;
+  }
+  .zoneRandom:hover{border-color:rgba(244,169,59,0.4);}
+  .zoneRandom.on{background:linear-gradient(180deg,var(--amber),var(--amber-dim));color:var(--navy-950);border-color:transparent;font-weight:700;}
+  .zoneGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+  .zoneGrid button{
+    background:var(--navy-700);border:1px solid rgba(255,255,255,0.08);color:var(--chalk-dim);
+    padding:11px 4px;border-radius:8px;font-size:12.5px;font-weight:500;cursor:pointer;
+    transition:background .15s,color .15s,border-color .15s;
+    font-family:"Noto Sans JP",sans-serif;
+  }
+  .zoneGrid button:hover{border-color:rgba(244,169,59,0.4);}
+  .zoneGrid button.on{background:linear-gradient(180deg,var(--amber),var(--amber-dim));color:var(--navy-950);border-color:transparent;font-weight:700;}
+  .zoneNote{font-size:11.5px;color:var(--chalk-dim);line-height:1.6;margin:8px 0 0;}
+
   .cta-row{margin-top:22px;display:flex;flex-direction:column;gap:10px;}
   #enterVr,#enterFlat{
     width:100%;padding:15px 18px;border-radius:10px;border:none;cursor:pointer;
@@ -207,6 +226,13 @@
       <div class="chips" id="chipPitches"></div>
     </div>
 
+    <div class="group">
+      <div class="group-label">投球コース(訓練用・9分割)</div>
+      <button class="zoneRandom on" id="zoneRandomBtn">ランダム(コース指定なし)</button>
+      <div class="zoneGrid" id="zoneGrid"></div>
+      <p class="zoneNote">「ど真ん中」以外は狙ったコース周辺に適度にばらつき、ボールになることもあります</p>
+    </div>
+
     <div class="cta-row">
       <button id="enterVr" disabled><span>⚾</span>VRで打席に入る</button>
       <button id="enterFlat">画面のみで体験する(デスクトップ/確認用)</button>
@@ -241,12 +267,15 @@
 /* ============================================================
    設定値・球種データ
    ============================================================ */
+// gは縦の変化量(値が大きいほど落ちる)、ahは横の変化量、lateYは終盤だけ急激に効いてくる
+// 「落差の遅れ」成分(t^4に比例。フォークのように直前まで普通の球に見えて急に失速して
+// 沈む球種向け。詳細はcomputePitch()のlateY反映箇所を参照)。指定しない球種は0扱い。
 const PITCH_TYPES = {
   fastball:{ key:"fastball", name:"速球(ストレート)", short:"直球", speed:[144,153], g:7.0,  ah:0.55, side:"arm"  },
   change:  { key:"change",   name:"チェンジアップ",   short:"チェンジ", speed:[118,129], g:11.0, ah:0.9,  side:"arm"  },
-  curve:   { key:"curve",    name:"カーブ",           short:"カーブ", speed:[107,124], g:20.0, ah:1.3,  side:"glove"},
-  shuuto:  { key:"shuuto",   name:"シュート",         short:"シュート", speed:[132,143], g:8.2,  ah:3.6,  side:"arm"  },
-  fork:    { key:"fork",     name:"フォーク",         short:"フォーク", speed:[126,137], g:19.5, ah:0.3,  side:"arm"  },
+  curve:   { key:"curve",    name:"カーブ",           short:"カーブ", speed:[107,124], g:24.0, ah:1.8,  side:"glove"},
+  shuuto:  { key:"shuuto",   name:"シュート",         short:"シュート", speed:[132,143], g:9.0,  ah:5.2,  side:"arm"  },
+  fork:    { key:"fork",     name:"フォーク",         short:"フォーク", speed:[126,137], g:5.0,  ah:0.3,  side:"arm", lateY:25 },
   slider:  { key:"slider",   name:"スライダー",       short:"スライダー", speed:[128,141], g:8.5,  ah:4.6,  side:"glove"},
 };
 const PITCH_ORDER = ["fastball","change","curve","shuuto","fork","slider"];
@@ -256,10 +285,23 @@ const MOUND_Z   = -15.3;
 const PLATE_Z   = 0;
 const G_CONST   = 9.8;
 
-// ストライクゾーン(9分割ガイド表示 & ストライク/ボール判定の両方で共有する基準値)
+// ストライクゾーン(9分割ガイド表示・ストライク/ボール判定・コース指定のすべてで共有する基準値)
 const ZONE_X_HALF = 0.215; // ホームベース幅の半分に合わせた目安
 const ZONE_Y_BOT  = 0.55;  // 低め基準(ひざ元)
 const ZONE_Y_TOP  = 1.15;  // 高め基準(胸元)
+const ZONE_XW = (ZONE_X_HALF*2)/3;      // 9分割した1マスの横幅
+const ZONE_YH = (ZONE_Y_TOP-ZONE_Y_BOT)/3; // 9分割した1マスの縦幅
+// 訓練用コース指定のキー一覧("hi/mid/lo" 高低 × "in/mid/out" 内外角、打者から見た向き)
+const ZONE_KEYS = [
+  "hi-in","hi-mid","hi-out",
+  "mid-in","mid-mid","mid-out",
+  "lo-in","lo-mid","lo-out"
+];
+const ZONE_LABELS = {
+  "hi-in":"高め内角","hi-mid":"高め真ん中","hi-out":"高め外角",
+  "mid-in":"真ん中内角","mid-mid":"ど真ん中","mid-out":"真ん中外角",
+  "lo-in":"低め内角","lo-mid":"低め真ん中","lo-out":"低め外角"
+};
 
 const state = {
   pitcherHand:"R",   // "R" | "L"
@@ -267,6 +309,7 @@ const state = {
   mode:"watch",      // "watch" | "bat"
   dominant:"R",      // バットを持つ手
   showZone:true,     // ストライクゾーンの9分割ガイドをホームベース上に表示するか
+  targetZone:"any",  // "any"(コースはランダム) | ZONE_KEYSのいずれか(訓練用にコース固定)
   enabled:{fastball:true,change:true,curve:true,shuuto:true,fork:true,slider:true},
 };
 
@@ -286,6 +329,27 @@ PITCH_ORDER.forEach(key=>{
     syncFlatSettingsText();
   });
   chipWrap.appendChild(el);
+});
+
+const zoneGridWrap = document.getElementById("zoneGrid");
+const zoneRandomBtn = document.getElementById("zoneRandomBtn");
+ZONE_KEYS.forEach(key=>{
+  const el = document.createElement("button");
+  el.dataset.k = key;
+  el.textContent = ZONE_LABELS[key];
+  el.addEventListener("click", ()=>{
+    state.targetZone = key;
+    zoneRandomBtn.classList.remove("on");
+    zoneGridWrap.querySelectorAll("button").forEach(b=>b.classList.toggle("on", b===el));
+    syncFlatSettingsText();
+  });
+  zoneGridWrap.appendChild(el);
+});
+zoneRandomBtn.addEventListener("click", ()=>{
+  state.targetZone = "any";
+  zoneRandomBtn.classList.add("on");
+  zoneGridWrap.querySelectorAll("button").forEach(b=>b.classList.remove("on"));
+  syncFlatSettingsText();
 });
 
 function wireSeg(id, onSet){
@@ -315,9 +379,11 @@ wireSeg("segZone",    v=>{
 
 function handLabel(h){ return h==="R"?"右":"左"; }
 function syncFlatSettingsText(){
+  const zoneLabel = state.targetZone==="any" ? "ランダム" : ZONE_LABELS[state.targetZone];
   document.getElementById("flatSettings").innerHTML =
     "投手:<b>"+handLabel(state.pitcherHand)+"</b>&nbsp; 打者:<b>"+handLabel(state.batterHand)+"</b>&nbsp; "+
-    "モード:<b>"+(state.mode==="bat"?"バッティング":"見るだけ")+"</b>";
+    "モード:<b>"+(state.mode==="bat"?"バッティング":"見るだけ")+"</b>&nbsp; "+
+    "コース:<b>"+zoneLabel+"</b>";
 }
 syncFlatSettingsText();
 
@@ -773,6 +839,44 @@ function pickPitchKey(){
 }
 function rand(a,b){ return a + Math.random()*(b-a); }
 
+// 訓練用の「コース(9分割)」指定に応じてターゲット座標を決める。
+// state.targetZoneが"any"のときは9マスから毎回ランダムに1つ選ぶ(ど真ん中もたまに混ざる)。
+function pickTargetZoneKey(){
+  if(state.targetZone !== "any") return state.targetZone;
+  return ZONE_KEYS[Math.floor(Math.random()*ZONE_KEYS.length)];
+}
+// キーから世界座標のマス範囲を求める。内角/外角は打者の利き手で左右が入れ替わる
+// (右打者は体に近い側=マイナスX側が内角、左打者はその逆。5-6の座標系メモ参照)。
+function zoneCellBounds(key, batterHand){
+  const [row, col] = key.split("-");
+  let yMin, yMax;
+  if(row==="hi"){ yMin = ZONE_Y_TOP-ZONE_YH; yMax = ZONE_Y_TOP; }
+  else if(row==="lo"){ yMin = ZONE_Y_BOT; yMax = ZONE_Y_BOT+ZONE_YH; }
+  else { yMin = ZONE_Y_BOT+ZONE_YH; yMax = ZONE_Y_TOP-ZONE_YH; }
+
+  const insideIsNegativeX = batterHand==="R";
+  let xMin, xMax;
+  if(col==="mid"){ xMin = -ZONE_XW/2; xMax = ZONE_XW/2; }
+  else if(col==="in"){
+    if(insideIsNegativeX){ xMin = -ZONE_X_HALF; xMax = -ZONE_X_HALF+ZONE_XW; }
+    else { xMin = ZONE_X_HALF-ZONE_XW; xMax = ZONE_X_HALF; }
+  } else { // "out"
+    if(insideIsNegativeX){ xMin = ZONE_X_HALF-ZONE_XW; xMax = ZONE_X_HALF; }
+    else { xMin = -ZONE_X_HALF; xMax = -ZONE_X_HALF+ZONE_XW; }
+  }
+  return {xMin, xMax, yMin, yMax};
+}
+// 指定コースの中心付近を狙いつつ、実際の投手らしく適度にばらつかせる。
+// ど真ん中だけは散らさず常にストライクにする(打撃練習の「置き球」用)。
+function generateTarget(zoneKey, batterHand){
+  const b = zoneCellBounds(zoneKey, batterHand);
+  const cx = (b.xMin+b.xMax)/2, cy = (b.yMin+b.yMax)/2;
+  if(zoneKey==="mid-mid"){
+    return { x: cx + rand(-ZONE_XW*0.22, ZONE_XW*0.22), y: cy + rand(-ZONE_YH*0.22, ZONE_YH*0.22) };
+  }
+  return { x: cx + rand(-ZONE_XW*0.55, ZONE_XW*0.55), y: cy + rand(-ZONE_YH*0.55, ZONE_YH*0.55) };
+}
+
 // 実際のリリース位置(投球腕の手先)をピッチャーの人形のジオメトリから直接計算する。
 // ピッチャーの大きさやポーズを調整しても、ボールが常に「手から出ている」ように見える。
 const _handTipLocal = new THREE.Vector3(0, -0.32, 0);
@@ -803,11 +907,9 @@ function computePitch(){
     relPoint.y + rand(-0.04,0.04),
     relPoint.z
   );
-  const T = new THREE.Vector3(
-    rand(-0.06,0.06) + (state.batterHand==="R"? -0.02:0.02),
-    rand(0.42,1.32), // 高め(肩口)〜低め(すね)まで、実際の投手らしく上下に投げ分ける
-    PLATE_Z
-  );
+  const zoneKey = pickTargetZoneKey();
+  const tgt = generateTarget(zoneKey, state.batterHand);
+  const T = new THREE.Vector3(tgt.x, tgt.y, PLATE_Z);
 
   const dist = R.distanceTo(new THREE.Vector3(T.x,T.y,T.z));
   const tTotal = dist/speedMs;
@@ -816,15 +918,82 @@ function computePitch(){
   if(def.side==="glove"){ sign = hand==="R" ? 1 : -1; }
   else { sign = hand==="R" ? -1 : 1; }
 
+  const lateY = def.lateY || 0; // フォークなど「終盤だけ急に沈む」球種の追加落差係数(0なら通常の放物線)
   const vz0 = (T.z - R.z)/tTotal;
-  const vy0 = (T.y - R.y + 0.5*def.g*tTotal*tTotal)/tTotal;
+  const vy0 = (T.y - R.y + 0.5*def.g*tTotal*tTotal + lateY*Math.pow(tTotal,4))/tTotal;
   const vx0 = (T.x - R.x - 0.5*def.ah*sign*tTotal*tTotal)/tTotal;
 
   // ボールは変化量に関わらず必ずT(狙った着弾点)を通過するので、Tがゾーン内かどうかで
   // ストライク/ボールを判定できる(打者が空振り・見逃した場合の「コース」判定として使う)
   const isStrike = Math.abs(T.x) <= ZONE_X_HALF && T.y >= ZONE_Y_BOT && T.y <= ZONE_Y_TOP;
 
-  return { hand, key, def, speedKmh, R, T, vx0, vy0, vz0, ah:def.ah*sign, g:def.g, tTotal, spinDir: sign, isStrike };
+  return { hand, key, def, speedKmh, R, T, vx0, vy0, vz0, ah:def.ah*sign, g:def.g, lateY, tTotal, spinDir: sign, isStrike, zoneKey };
+}
+
+/* ============================================================
+   効果音(外部ファイルなしでWeb Audio APIから直接合成する。
+   単一HTMLファイル完結という制約上、音声ファイルを別途ホストできないため)
+   ============================================================ */
+let audioCtx = null;
+function ensureAudio(){
+  // ブラウザの自動再生ポリシー対策:必ずユーザー操作(クリック/コントローラー選択)の
+  // イベントハンドラ内から呼び出すこと。初回はここでAudioContextを生成し、以後は再開だけ行う。
+  if(!audioCtx){
+    try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ audioCtx = null; }
+  }
+  if(audioCtx && audioCtx.state === "suspended"){ audioCtx.resume().catch(()=>{}); }
+}
+function makeNoiseBuffer(duration){
+  const sr = audioCtx.sampleRate;
+  const len = Math.max(1, Math.floor(sr*duration));
+  const buf = audioCtx.createBuffer(1, len, sr);
+  const data = buf.getChannelData(0);
+  for(let i=0;i<len;i++) data[i] = Math.random()*2-1;
+  return buf;
+}
+// 投球リリース音:速球ほど短く高い「ヒュッ」というノイズのシュッと抜ける音
+function playThrowSound(speedKmh){
+  if(!audioCtx) return;
+  const t0 = audioCtx.currentTime;
+  const dur = 0.22;
+  const src = audioCtx.createBufferSource();
+  src.buffer = makeNoiseBuffer(dur);
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.Q.value = 0.9;
+  const startFreq = 2400 + (speedKmh||130)*5;
+  bp.frequency.setValueAtTime(startFreq, t0);
+  bp.frequency.exponentialRampToValueAtTime(450, t0+dur);
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(0.45, t0+0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  src.connect(bp); bp.connect(gain); gain.connect(audioCtx.destination);
+  src.start(t0); src.stop(t0+dur+0.05);
+}
+// キャッチャーミット音:革がはじける高音のノイズ + 低音の「ポンッ」を重ねて再現
+function playMittSound(){
+  if(!audioCtx) return;
+  const t0 = audioCtx.currentTime;
+  const noiseSrc = audioCtx.createBufferSource();
+  noiseSrc.buffer = makeNoiseBuffer(0.05);
+  const hp = audioCtx.createBiquadFilter();
+  hp.type = "highpass"; hp.frequency.value = 1200;
+  const noiseGain = audioCtx.createGain();
+  noiseGain.gain.setValueAtTime(0.7, t0);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, t0+0.05);
+  noiseSrc.connect(hp); hp.connect(noiseGain); noiseGain.connect(audioCtx.destination);
+  noiseSrc.start(t0); noiseSrc.stop(t0+0.06);
+
+  const osc = audioCtx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(180, t0);
+  osc.frequency.exponentialRampToValueAtTime(90, t0+0.08);
+  const oscGain = audioCtx.createGain();
+  oscGain.gain.setValueAtTime(0.6, t0);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, t0+0.1);
+  osc.connect(oscGain); oscGain.connect(audioCtx.destination);
+  osc.start(t0); osc.stop(t0+0.12);
 }
 
 /* ============================================================
@@ -843,6 +1012,7 @@ let pitcherFollowT = -1; // -1:フォロースルー中でない / 0〜FOLLOW_TI
 
 function startThrow(){
   if(phase!=="idle") return;
+  ensureAudio(); // ボタン/コントローラー操作の中で呼ぶことでブラウザの自動再生制限を回避する
   current = computePitch();
   layoutPitcher(current.hand);
   phase = "windup";
@@ -865,6 +1035,7 @@ function releaseBall(){
   pitcherFollowT = 0;
   ballGroup.visible = true;
   ballGroup.position.copy(current.R);
+  playThrowSound(current.speedKmh);
   drawBoard(current.def.name, current.speedKmh, null, false);
   document.getElementById("bType").textContent = current.def.name;
   document.getElementById("bSpeed").innerHTML = current.speedKmh+"<span>km/h</span>";
@@ -945,13 +1116,13 @@ function detachBat(){
 }
 
 /* ---------------- メニューパネル(canvas texture) ---------------- */
-const MENU_W=512, MENU_H=460;
+const MENU_W=512, MENU_H=620; // コース(9分割)グリッドを追加した分、高さを460→620に拡張
 const menuCanvas = document.createElement("canvas");
 menuCanvas.width=MENU_W; menuCanvas.height=MENU_H;
 const menuCtx = menuCanvas.getContext("2d");
 const menuTex = new THREE.CanvasTexture(menuCanvas);
 const menuPanel = new THREE.Mesh(
-  new THREE.PlaneGeometry(0.58, 0.52),
+  new THREE.PlaneGeometry(0.58, 0.58*(MENU_H/MENU_W)), // キャンバスのアスペクト比に合わせて高さを自動算出
   new THREE.MeshBasicMaterial({map:menuTex, transparent:true})
 );
 let menuButtons = [];
@@ -995,6 +1166,37 @@ function drawMenu(){
     cx += w;
   });
   y += 40;
+
+  // コース(9分割・訓練用)
+  c.fillStyle="#a9b3c2"; c.font="600 14px sans-serif"; c.textAlign="left";
+  c.fillText("コース(訓練用)", 20, y+14);
+  y += 22;
+  {
+    const on = state.targetZone==="any";
+    c.fillStyle = on? "#f4a93b":"#1b3350";
+    roundRect(c,20,y,MENU_W-40,26,8); c.fill();
+    c.fillStyle = on? "#0a1420":"#a9b3c2";
+    c.font="600 12px sans-serif"; c.textAlign="center";
+    c.fillText("ランダム(コース指定なし)", MENU_W/2, y+17);
+    menuButtons.push({x:20,y:y,w:MENU_W-40,h:26, action:()=>{ state.targetZone="any"; drawMenu(); }});
+  }
+  y += 32;
+  {
+    const gGap = 6, gCellW = (MENU_W-40-gGap*2)/3, gCellH = 32;
+    ZONE_KEYS.forEach((key,idx)=>{
+      const col = idx%3, gRow = (idx/3)|0;
+      const bx = 20 + col*(gCellW+gGap);
+      const by = y + gRow*(gCellH+gGap);
+      const on = state.targetZone===key;
+      c.fillStyle = on? "#f4a93b":"#1b3350";
+      roundRect(c,bx,by,gCellW,gCellH,8); c.fill();
+      c.fillStyle = on? "#0a1420":"#a9b3c2";
+      c.font="600 12px sans-serif"; c.textAlign="center";
+      c.fillText(ZONE_LABELS[key].replace("め","").replace("角",""), bx+gCellW/2, by+21);
+      menuButtons.push({x:bx,y:by,w:gCellW,h:gCellH, action:()=>{ state.targetZone=key; drawMenu(); }});
+    });
+    y += (gCellH+gGap)*3 + 8;
+  }
 
   // 投げるボタン
   c.fillStyle = phase==="idle" ? "#c0392b" : "#5b6472";
@@ -1098,6 +1300,7 @@ enterVrBtn.disabled = false; // 判定がどう転んでも一応押せるよう
 
 let currentSession = null;
 enterVrBtn.addEventListener("click", async ()=>{
+  ensureAudio(); // ユーザー操作の直後に呼び、音声の自動再生制限を早めに解除しておく
   try{
     if(typeof navigator.xr === "undefined"){
       vrNote.textContent = "エラー: navigator.xr が存在しないため開始できません。";
@@ -1138,6 +1341,7 @@ enterVrBtn.addEventListener("click", async ()=>{
 /* ---------------- 画面のみモード(デスクトップ確認用) ---------------- */
 const flatHud = document.getElementById("flatHud");
 document.getElementById("enterFlat").addEventListener("click", ()=>{
+  ensureAudio();
   document.getElementById("overlay").style.display="none";
   flatHud.classList.add("show");
   updateBatterStance();
@@ -1289,7 +1493,7 @@ try{
     const t = Math.min(phaseT, current.tTotal + 0.5);
     if(t <= current.tTotal){
       const x = current.R.x + current.vx0*t + 0.5*current.ah*t*t;
-      const y = current.R.y + current.vy0*t - 0.5*current.g*t*t;
+      const y = current.R.y + current.vy0*t - 0.5*current.g*t*t - current.lateY*t*t*t*t;
       const z = current.R.z + current.vz0*t;
       ballGroup.position.set(x,y,z);
       ballGroup.rotation.x += dt*(18+current.speedKmh*0.05);
@@ -1319,6 +1523,7 @@ try{
       ballGroup.position.z += dt*current.vz0*0.6;
       ballGroup.position.y -= dt*2.0;
       if(t > current.tTotal + 0.18){
+        playMittSound(); // 打たれなかった投球は(空振り・見逃し・見るだけモードいずれも)必ずミットに収まる
         if(state.mode==="bat"){
           finishPitch(z<0.1 ? "空振り三振…" : "見逃し", false);
         } else {
