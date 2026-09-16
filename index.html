@@ -578,7 +578,9 @@ const SCOREBOARD_X = 7; // ピッチャーの真後ろに重ならないよう�
 scoreboard.position.set(SCOREBOARD_X, 8.2, -34);
 scene.add(scoreboard);
 const boardPost = new THREE.Mesh(new THREE.BoxGeometry(0.5,8.2,0.5), standMat);
-boardPost.position.set(SCOREBOARD_X, 4.1, -34);
+// 支柱には奥行き(0.5)があるため、板と同じZ座標だと手前半分がめり込んで表示内容の前に出てしまう。
+// 板よりはっきり奥(打者から見て遠い側)にずらして、表示を隠さないようにする。
+boardPost.position.set(SCOREBOARD_X, 4.1, -34.4);
 scene.add(boardPost);
 
 function drawBoard(typeName, speedKmh, resultText, resultGood, callText, callIsStrike){
