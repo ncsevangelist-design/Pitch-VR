@@ -274,7 +274,7 @@ const PITCH_TYPES = {
   fastball:{ key:"fastball", name:"速球(ストレート)", short:"直球", speed:[144,153], g:7.0,  ah:0.55, side:"arm"  },
   change:  { key:"change",   name:"チェンジアップ",   short:"チェンジ", speed:[118,129], g:11.0, ah:0.9,  side:"arm"  },
   curve:   { key:"curve",    name:"カーブ",           short:"カーブ", speed:[107,124], g:24.0, ah:1.8,  side:"glove"},
-  shuuto:  { key:"shuuto",   name:"シュート",         short:"シュート", speed:[132,143], g:9.0,  ah:5.2,  side:"arm"  },
+  shuuto:  { key:"shuuto",   name:"シュート",         short:"シュート", speed:[130,141], g:9.0,  ah:8.0,  side:"arm", lateX:12 },
   fork:    { key:"fork",     name:"フォーク",         short:"フォーク", speed:[126,137], g:5.0,  ah:0.3,  side:"arm", lateY:25 },
   slider:  { key:"slider",   name:"スライダー",       short:"スライダー", speed:[128,141], g:8.5,  ah:4.6,  side:"glove"},
 };
@@ -919,15 +919,16 @@ function computePitch(){
   else { sign = hand==="R" ? -1 : 1; }
 
   const lateY = def.lateY || 0; // フォークなど「終盤だけ急に沈む」球種の追加落差係数(0なら通常の放物線)
+  const lateX = (def.lateX || 0) * sign; // シュートなど「終盤だけさらに一段えぐる」横方向の追加係数
   const vz0 = (T.z - R.z)/tTotal;
   const vy0 = (T.y - R.y + 0.5*def.g*tTotal*tTotal + lateY*Math.pow(tTotal,4))/tTotal;
-  const vx0 = (T.x - R.x - 0.5*def.ah*sign*tTotal*tTotal)/tTotal;
+  const vx0 = (T.x - R.x - 0.5*def.ah*sign*tTotal*tTotal - lateX*Math.pow(tTotal,4))/tTotal;
 
   // ボールは変化量に関わらず必ずT(狙った着弾点)を通過するので、Tがゾーン内かどうかで
   // ストライク/ボールを判定できる(打者が空振り・見逃した場合の「コース」判定として使う)
   const isStrike = Math.abs(T.x) <= ZONE_X_HALF && T.y >= ZONE_Y_BOT && T.y <= ZONE_Y_TOP;
 
-  return { hand, key, def, speedKmh, R, T, vx0, vy0, vz0, ah:def.ah*sign, g:def.g, lateY, tTotal, spinDir: sign, isStrike, zoneKey };
+  return { hand, key, def, speedKmh, R, T, vx0, vy0, vz0, ah:def.ah*sign, lateX, g:def.g, lateY, tTotal, spinDir: sign, isStrike, zoneKey };
 }
 
 /* ============================================================
@@ -1492,7 +1493,7 @@ try{
     phaseT += dt;
     const t = Math.min(phaseT, current.tTotal + 0.5);
     if(t <= current.tTotal){
-      const x = current.R.x + current.vx0*t + 0.5*current.ah*t*t;
+      const x = current.R.x + current.vx0*t + 0.5*current.ah*t*t + current.lateX*t*t*t*t;
       const y = current.R.y + current.vy0*t - 0.5*current.g*t*t - current.lateY*t*t*t*t;
       const z = current.R.z + current.vz0*t;
       ballGroup.position.set(x,y,z);
